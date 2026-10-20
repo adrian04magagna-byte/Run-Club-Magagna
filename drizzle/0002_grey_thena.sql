@@ -1,0 +1,1 @@
+ALTER TABLE `activities` ADD CONSTRAINT `activities_assignment_unique` UNIQUE(`assignmentId`);
