@@ -150,8 +150,9 @@ const config: ExpoConfig = {
     ],
   ],
   experiments: {
-    typedRoutes: true,
-    reactCompiler: true,
+  typedRoutes: true,
+  reactCompiler: true,
+  baseUrl: "/Run-Club-Magagna",
   },
 };
 
