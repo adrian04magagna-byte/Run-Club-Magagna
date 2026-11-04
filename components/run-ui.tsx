@@ -33,7 +33,9 @@ export const C = {
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
 export function Screen({ children, scroll = false, edges = ["top", "left", "right"] }: { children: ReactNode; scroll?: boolean; edges?: Edge[] }) {
-  const body = scroll ? <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>{children}</ScrollView> : children;
+  const body = scroll
+    ? <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}><View style={styles.column}>{children}</View></ScrollView>
+    : <View style={[styles.column, styles.fill]}>{children}</View>;
   return <SafeAreaView edges={edges} style={styles.screen}>{body}</SafeAreaView>;
 }
 
@@ -132,6 +134,9 @@ export function BackButton({ onPress, label = "Voltar" }: { onPress: () => void;
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.paper },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 34 },
+  // Keeps screens phone-shaped on wide browsers instead of stretching edge to edge.
+  column: { width: "100%", maxWidth: 720, alignSelf: "center" },
+  fill: { flex: 1 },
   mark: { alignItems: "center", justifyContent: "center", overflow: "hidden" },
   markArc: { position: "absolute", left: 7, top: 9 },
   markDash: { position: "absolute", borderRadius: 12, transform: [{ rotate: "-35deg" }] },

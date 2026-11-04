@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { STRAVA_REQUIRED_SCOPE } from "../../shared/strava";
-import { stravaProcedure, router } from "../_core/trpc";
+import { memberProcedure, router } from "../_core/trpc";
 import {
   beginStravaAuthorization,
   cancelStravaAuthorization,
@@ -23,13 +23,13 @@ const stateSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const activityIdSchema = z.string().regex(/^\d{1,32}$/);
 
 export const stravaRouter = router({
-  status: stravaProcedure.query(async ({ ctx }) => {
+  status: memberProcedure.query(async ({ ctx }) => {
     disableCaching(ctx.res);
     const status = await getStravaConnectionStatus(ctx.user.id);
     return { ...status, requiredScope: STRAVA_REQUIRED_SCOPE };
   }),
 
-  start: stravaProcedure
+  start: memberProcedure
     .input(z.object({
       platform: z.enum(["web", "native"]),
       returnUri: z.string().min(8).max(2048),
@@ -45,42 +45,42 @@ export const stravaRouter = router({
       );
     }),
 
-  complete: stravaProcedure
+  complete: memberProcedure
     .input(z.object({ code: z.string().trim().min(1).max(512), state: stateSchema }))
     .mutation(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return completeStravaAuthorization(ctx.user.id, input.code, input.state);
     }),
 
-  cancel: stravaProcedure
+  cancel: memberProcedure
     .input(z.object({ state: stateSchema }))
     .mutation(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return cancelStravaAuthorization(ctx.user.id, input.state);
     }),
 
-  activities: stravaProcedure
+  activities: memberProcedure
     .input(z.object({ page: z.number().int().min(1).max(100).default(1) }))
     .query(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return listStravaActivities(ctx.user.id, input.page);
     }),
 
-  activityDetail: stravaProcedure
+  activityDetail: memberProcedure
     .input(z.object({ activityId: activityIdSchema }))
     .query(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return getStravaActivityDetail(ctx.user.id, input.activityId);
     }),
 
-  activityStreams: stravaProcedure
+  activityStreams: memberProcedure
     .input(z.object({ activityId: activityIdSchema }))
     .query(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return getStravaActivityStreams(ctx.user.id, input.activityId);
     }),
 
-  disconnect: stravaProcedure.mutation(async ({ ctx }) => {
+  disconnect: memberProcedure.mutation(async ({ ctx }) => {
     disableCaching(ctx.res);
     return disconnectStrava(ctx.user.id);
   }),

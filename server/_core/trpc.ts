@@ -58,8 +58,8 @@ export const athleteProcedure = t.procedure.use(requireUser).use(
   }),
 );
 
-/** Strava is a personal history: approved athletes and the configured coaches may connect their own account. */
-export const stravaProcedure = t.procedure.use(requireUser).use(
+/** Personal training data (Strava, dashboards): approved athletes and the configured coaches, each for their own account. */
+export const memberProcedure = t.procedure.use(requireUser).use(
   t.middleware(async ({ ctx, next }) => {
     if (ctx.user && ctx.user.role === "admin" && isCoachEmail(ctx.user.email)) {
       return next({ ctx: { ...ctx, user: ctx.user } });
@@ -74,7 +74,7 @@ export const stravaProcedure = t.procedure.use(requireUser).use(
       .where(eq(athleteAccounts.userId, ctx.user.id))
       .limit(1);
     if (accounts[0]?.status !== "approved") {
-      throw new TRPCError({ code: "FORBIDDEN", message: "Apenas alunos aprovados podem conectar o Strava." });
+      throw new TRPCError({ code: "FORBIDDEN", message: "Apenas alunos aprovados podem acessar seus dados de treino." });
     }
     return next({ ctx: { ...ctx, user: ctx.user } });
   }),

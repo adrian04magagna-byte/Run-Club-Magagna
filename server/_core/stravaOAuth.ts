@@ -579,6 +579,25 @@ export async function listStravaActivities(userId: number, page: number) {
   return payload.map(toSummary).filter((item): item is StravaActivitySummary => item !== null);
 }
 
+const STRAVA_MAX_PAGE_SIZE = 200;
+
+/** Every activity started after `afterEpochSeconds`, newest pages first; stops after `maxPages`. */
+export async function listStravaActivitiesSince(userId: number, afterEpochSeconds: number, maxPages: number) {
+  const items: StravaActivitySummary[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const query = new URLSearchParams({
+      after: String(Math.max(0, Math.floor(afterEpochSeconds))),
+      page: String(page),
+      per_page: String(STRAVA_MAX_PAGE_SIZE),
+    });
+    const payload = await requestStravaApi(userId, "/athlete/activities", query);
+    if (!Array.isArray(payload)) throw trpcError("SERVICE_UNAVAILABLE", "O Strava retornou uma lista de atividades inválida.");
+    items.push(...payload.map(toSummary).filter((item): item is StravaActivitySummary => item !== null));
+    if (payload.length < STRAVA_MAX_PAGE_SIZE) return { items, truncated: false };
+  }
+  return { items, truncated: true };
+}
+
 export async function getStravaActivityDetail(userId: number, activityId: string): Promise<StravaActivityDetail> {
   const expectedAthleteHash = await getConnectedAthleteHash(userId);
   const payload = await requestStravaApi(userId, `/activities/${activityId}`);
