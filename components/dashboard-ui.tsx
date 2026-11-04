@@ -59,6 +59,60 @@ export function PeriodSelector({ value, onChange }: { value: InsightPeriod; onCh
   );
 }
 
+export type SegmentOption<T extends string> = { value: T; label: string; badge?: number };
+
+/** Pill-shaped tabs for switching between sections of one screen. */
+export function Segmented<T extends string>({ options, value, onChange }: { options: SegmentOption<T>[]; value: T; onChange: (value: T) => void }) {
+  return (
+    <View style={styles.segment} accessibilityRole="tablist">
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <Pressable
+            key={option.value}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            onPress={() => onChange(option.value)}
+            style={({ pressed }) => [styles.segmentItem, styles.segmentItemRow, active && styles.segmentItemActive, pressed && styles.pressed]}
+          >
+            <Text style={[styles.segmentText, active && styles.segmentTextActive]} numberOfLines={1}>{option.label}</Text>
+            {option.badge ? (
+              <View style={[styles.segmentBadge, active && styles.segmentBadgeActive]}>
+                <Text style={styles.segmentBadgeText}>{option.badge}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function shiftDate(days: number) {
+  const value = new Date();
+  value.setDate(value.getDate() + days);
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
+/** Quick date picks plus the typed AAAA-MM-DD field, so most dates take one tap. */
+export function DateChips({ value, onChange, past = false }: { value: string; onChange: (value: string) => void; past?: boolean }) {
+  const options = past
+    ? [{ label: "Hoje", value: shiftDate(0) }, { label: "Ontem", value: shiftDate(-1) }, { label: "Anteontem", value: shiftDate(-2) }]
+    : [{ label: "Hoje", value: shiftDate(0) }, { label: "Amanhã", value: shiftDate(1) }, { label: "Em 2 dias", value: shiftDate(2) }];
+  return (
+    <View style={styles.dateChips}>
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <Pressable key={option.label} onPress={() => onChange(option.value)} style={({ pressed }) => [styles.dateChip, active && styles.dateChipActive, pressed && styles.pressed]}>
+            <Text style={[styles.dateChipText, active && styles.dateChipTextActive]}>{option.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export function DeltaChip({ value, inverse = false }: { value: number | null; inverse?: boolean }) {
   if (value === null) return null;
   const up = value >= 0;
@@ -229,6 +283,15 @@ const styles = StyleSheet.create({
   segment: { flexDirection: "row", padding: 4, gap: 4, borderRadius: 16, backgroundColor: C.stone },
   segmentItem: { flex: 1, minHeight: 36, alignItems: "center", justifyContent: "center", borderRadius: 12 },
   segmentItemActive: { backgroundColor: C.ink, boxShadow: "0px 4px 10px rgba(11, 23, 32, 0.18)" },
+  segmentItemRow: { flexDirection: "row", gap: 6, paddingHorizontal: 6 },
+  segmentBadge: { minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: C.coral },
+  segmentBadgeActive: { backgroundColor: C.lime },
+  segmentBadgeText: { color: C.ink, fontSize: 10, fontWeight: "900" },
+  dateChips: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  dateChip: { minHeight: 34, justifyContent: "center", paddingHorizontal: 12, borderRadius: 999, backgroundColor: C.stone },
+  dateChipActive: { backgroundColor: C.ink },
+  dateChipText: { color: C.ink, fontSize: 12, fontWeight: "800" },
+  dateChipTextActive: { color: C.lime },
   segmentText: { color: C.inkSoft, fontSize: 12, fontWeight: "800" },
   segmentTextActive: { color: C.lime },
 
