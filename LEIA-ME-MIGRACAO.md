@@ -26,7 +26,8 @@ Verificações: `pnpm check`, `pnpm lint`, `pnpm test` (inclui o fluxo completo 
 ## Contas
 
 - **Aluno**: cadastra-se com e-mail e senha, ou usa "Continuar com Google". Fica pendente até o treinador aprovar.
-- **Treinador**: o e-mail em `COACH_EMAIL` vira treinador automaticamente.
+- **Treinador**: cada e-mail em `COACH_EMAIL` (lista separada por vírgula) vira treinador automaticamente.
+  Cada treinador vê os alunos que ele mesmo aprovou; pedidos pendentes aparecem para todos.
   - Com Google: basta entrar com a conta Google desse e-mail.
   - Com e-mail e senha: na tela de login, "É o treinador? Primeiro acesso", informando o código `COACH_SIGNUP_CODE`.
     O código impede que outra pessoa crie a conta com o e-mail do treinador antes dele.
@@ -52,7 +53,7 @@ Publique com `vercel deploy --prod` (o `vercel.json` já define instalação e b
 | --- | --- |
 | `DATABASE_URL` | String do Transaction pooler do Supabase |
 | `SESSION_SECRET` | `openssl rand -hex 32` |
-| `COACH_EMAIL` | E-mail do treinador |
+| `COACH_EMAIL` | E-mail(s) dos treinadores, separados por vírgula |
 | `COACH_SIGNUP_CODE` | Um código que só o treinador saiba |
 | `EXPO_PUBLIC_API_BASE_URL` | URL da própria API, ex.: `https://run-club-magagna.vercel.app` |
 | `ALLOWED_ORIGINS` | `https://adrian04magagna-byte.github.io` |

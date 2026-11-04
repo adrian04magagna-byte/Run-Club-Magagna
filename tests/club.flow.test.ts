@@ -4,7 +4,7 @@ import type { Request, Response } from "express";
 // End-to-end flow against an embedded Postgres (PGlite) running the real migrations.
 process.env.DATABASE_URL = "pglite:memory";
 process.env.SESSION_SECRET = "test-session-secret-with-at-least-32-chars";
-process.env.COACH_EMAIL = "coach@example.com";
+process.env.COACH_EMAIL = "coach@example.com, Second.Coach@example.com";
 process.env.COACH_SIGNUP_CODE = "coach-code";
 process.env.EXPO_PUBLIC_API_BASE_URL = "https://api.example.com";
 
@@ -53,6 +53,15 @@ describe("coach and athlete flow", () => {
     coachToken = result.sessionToken;
     const coach = await callerFor(coachToken);
     await expect(coach.account.status()).resolves.toEqual({ status: "coach" });
+  });
+
+  it("accepts every configured coach email", async () => {
+    const result = await (await callerFor()).account.register({
+      name: "Coach 2", email: "second.coach@example.com", password: "senha-do-coach-2", coachCode: "coach-code",
+    });
+    expect(result.status).toBe("authenticated");
+    if (result.status !== "authenticated") return;
+    expect(result.user.role).toBe("admin");
   });
 
   it("lets the coach approve, plan, and review", async () => {

@@ -5,7 +5,8 @@ export const ENV = {
   // Signs session tokens. Must be a long random value in production.
   sessionSecret: process.env.SESSION_SECRET ?? process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
-  coachEmail: process.env.COACH_EMAIL ?? "",
+  // One or more coach emails, comma separated.
+  coachEmails: list(process.env.COACH_EMAIL).map((email) => email.toLowerCase()),
   // Required to create the coach's email/password login (prevents anyone else claiming COACH_EMAIL).
   coachSignupCode: process.env.COACH_SIGNUP_CODE?.trim() ?? "",
   apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ?? process.env.API_BASE_URL?.trim() ?? "",
@@ -22,5 +23,6 @@ export const ENV = {
 };
 
 export function isCoachEmail(email: string | null | undefined): boolean {
-  return Boolean(ENV.coachEmail) && email?.trim().toLowerCase() === ENV.coachEmail.trim().toLowerCase();
+  const normalized = email?.trim().toLowerCase();
+  return Boolean(normalized) && ENV.coachEmails.includes(normalized!);
 }
