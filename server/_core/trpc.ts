@@ -9,6 +9,15 @@ import { isCoachEmail } from "./env";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
+  // Unexpected failures can carry SQL or driver details; send clients a generic message instead.
+  errorFormatter({ shape, error }) {
+    if (error.code !== "INTERNAL_SERVER_ERROR" || error.cause instanceof TRPCError) return shape;
+    return {
+      ...shape,
+      message: "Algo deu errado do nosso lado. Tente novamente em instantes.",
+      data: { ...shape.data, stack: undefined },
+    };
+  },
 });
 
 export const router = t.router;

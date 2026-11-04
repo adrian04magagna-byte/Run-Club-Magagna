@@ -30,6 +30,13 @@ export function createApp() {
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      onError({ error, path }) {
+        if (error.code !== "INTERNAL_SERVER_ERROR") return;
+        // Log the underlying cause (driver error code/message) server-side only; never the query params.
+        const cause = error.cause as { code?: unknown; message?: unknown; cause?: { code?: unknown; message?: unknown } } | undefined;
+        const root = cause?.cause ?? cause;
+        console.error(`[tRPC] ${path ?? "?"} failed:`, root?.code ?? "", String(root?.message ?? error.message).split("\nparams:")[0]);
+      },
     }),
   );
 

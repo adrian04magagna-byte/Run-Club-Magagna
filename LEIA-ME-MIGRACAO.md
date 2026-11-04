@@ -39,8 +39,12 @@ Verificações: `pnpm check`, `pnpm lint`, `pnpm test` (inclui o fluxo completo 
 O projeto `run-club-magagna` (região São Paulo) já tem o schema aplicado, com RLS ligado em todas as
 tabelas: a API do Supabase não expõe nada, só a nossa API acessa o banco.
 
-Em **Project Settings → Database**, defina a senha do banco e copie a string de conexão do
-**Transaction pooler** (porta `6543`). Ela vira o `DATABASE_URL` da Vercel.
+A API conecta com um usuário próprio, `runclub_api`, pelo **Transaction pooler**
+(`aws-1-sa-east-1.pooler.supabase.com:6543`, usuário `runclub_api.abbvlkmlkruxdcvogxkn`).
+Ele só lê e grava as tabelas do app (políticas RLS em `drizzle/0002_api_role_policies.sql`).
+A string fica apenas no `DATABASE_URL` da Vercel. Para trocar a senha:
+`ALTER ROLE runclub_api PASSWORD '...'` no SQL Editor e atualize o `DATABASE_URL`.
+Atenção: a conexão direta (`db.<ref>.supabase.co`) só funciona por IPv6 e não serve para a Vercel.
 
 Migrations futuras: altere `drizzle/schema.ts`, rode `npx drizzle-kit generate` e aplique o SQL gerado no Supabase.
 
@@ -51,7 +55,7 @@ Publique com `vercel deploy --prod` (o `vercel.json` já define instalação e b
 
 | Variável | Valor |
 | --- | --- |
-| `DATABASE_URL` | String do Transaction pooler do Supabase |
+| `DATABASE_URL` | String do Transaction pooler com o usuário `runclub_api` |
 | `SESSION_SECRET` | `openssl rand -hex 32` |
 | `COACH_EMAIL` | E-mail(s) dos treinadores, separados por vírgula |
 | `COACH_SIGNUP_CODE` | Um código que só o treinador saiba |

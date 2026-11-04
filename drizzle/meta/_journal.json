@@ -15,6 +15,13 @@
       "when": 1793812319311,
       "tag": "0001_enable_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793814052824,
+      "tag": "0002_api_role_policies",
+      "breakpoints": true
     }
   ]
 }
