@@ -32,7 +32,24 @@ Verificações: `pnpm check`, `pnpm lint`, `pnpm test` (inclui o fluxo completo 
   - Com e-mail e senha: na tela de login, "É o treinador? Primeiro acesso", informando o código `COACH_SIGNUP_CODE`.
     O código impede que outra pessoa crie a conta com o e-mail do treinador antes dele.
 
-## Publicar
+## Publicar na VM Oracle (produção atual)
+
+App web e API rodam na VM `vm_deon` (Ubuntu ARM, 193.123.122.30), ao lado dos outros sites dela:
+
+- Endereço: https://runclub.193-123-122-30.sslip.io (o sslip.io aponta o nome para o IP; troque por um domínio próprio quando quiser).
+- nginx: `/etc/nginx/sites-available/runclub` serve `~/run-club/web` e encaminha `/api/` para `127.0.0.1:3100`.
+- API: `~/run-club/api/index.mjs` (arquivo único gerado por `pnpm build`), processo `run-club-api` no pm2, configuração em `~/run-club/api/.env` (permissão 600).
+
+Atualizar depois de mudanças no código:
+
+```bash
+pnpm build
+EXPO_PUBLIC_API_BASE_URL=https://runclub.193-123-122-30.sslip.io EXPO_BASE_URL= npx expo export --platform web
+tar -czf - dist-server/index.mjs | ssh vm_deon 'tar -xzf - -C ~/run-club/api --strip-components=1 && pm2 restart run-club-api'
+tar -czf - -C dist . | ssh vm_deon 'rm -rf ~/run-club/web/* && tar -xzf - -C ~/run-club/web && chmod -R a+rX ~/run-club/web'
+```
+
+## Publicar (alternativa: GitHub Pages + Vercel)
 
 ### 1. Supabase (banco)
 

@@ -72,3 +72,4 @@ Thumbs.db
 .vercel
 .env*
 .codigo-treinador.txt
+dist-server/

@@ -14,7 +14,7 @@ await build({
   bundle: true,
   platform: "node",
   format: "esm",
-  target: "node22",
+  target: "node20",
   // PGlite is only used for local development and tests.
   external: ["@electric-sql/pglite", "drizzle-orm/pglite", "drizzle-orm/pglite/migrator"],
   // Some CommonJS dependencies (express) still call require() for Node built-ins.
