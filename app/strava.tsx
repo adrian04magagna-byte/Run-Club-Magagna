@@ -2,12 +2,11 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import * as ExpoLinking from "expo-linking";
 import Svg, { Polyline } from "react-native-svg";
-import { Redirect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 
 import { BackButton, C, CoachNote, Pill, PrimaryButton, Screen, SectionTitle } from "@/components/run-ui";
 import { MemberGate } from "@/components/member-gate";
 import { appWebUrl } from "@/constants/oauth";
-import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import {
   RUN_CLUB_APP_SCHEME,
@@ -491,8 +490,6 @@ function StravaHome() {
 }
 
 export default function StravaScreen() {
-  const { user } = useAuth();
-  if (user?.role === "admin") return <Redirect href="/(tabs)/profile" />;
   return <MemberGate><StravaHome /></MemberGate>;
 }
 
