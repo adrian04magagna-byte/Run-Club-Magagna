@@ -69,3 +69,6 @@ Thumbs.db
 # local
 .env
 .local-db/
+.vercel
+.env*
+.codigo-treinador.txt

@@ -5,7 +5,7 @@ O app saiu da plataforma Manus. Agora roda assim:
 | Parte | Onde | Observação |
 | --- | --- | --- |
 | App web (Expo) | GitHub Pages | Publicado pelo workflow `.github/workflows/pages.yml` a cada push na `main`. |
-| API (Express + tRPC) | Vercel | Função única em `api/index.ts`, configurada por `vercel.json`. |
+| API (Express + tRPC) | Vercel | `scripts/build-vercel.mjs` empacota `server/_core/vercel.ts` numa função ESM (Build Output API). |
 | Banco | Supabase (Postgres) | Schema em `drizzle/schema.ts`, migrations em `drizzle/*.sql`. |
 | Fotos de perfil | Tabela `profile_avatars` | Servidas por `/api/avatars/...` com URL assinada de 1–2 h. |
 | Login | E-mail e senha + Google | Sessão por token Bearer (JWT) guardado no aparelho/navegador. |
@@ -45,7 +45,8 @@ Migrations futuras: altere `drizzle/schema.ts`, rode `npx drizzle-kit generate` 
 
 ### 2. Vercel (API)
 
-Importe o repositório na Vercel (framework "Other"; o `vercel.json` já define tudo) e cadastre as variáveis:
+Projeto atual: `run-club-magagna-api` (time MAGAGNATECH), em https://run-club-magagna-api.vercel.app.
+Publique com `vercel deploy --prod` (o `vercel.json` já define instalação e build). Variáveis:
 
 | Variável | Valor |
 | --- | --- |
