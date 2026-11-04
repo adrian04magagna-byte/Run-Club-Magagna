@@ -19,6 +19,9 @@ export const ENV = {
   stravaClientId: process.env.STRAVA_CLIENT_ID?.trim() ?? "",
   stravaClientSecret: process.env.STRAVA_CLIENT_SECRET?.trim() ?? "",
   stravaTokenEncryptionKey: process.env.STRAVA_TOKEN_ENCRYPTION_KEY?.trim() ?? "",
+  // Cohere powers the coach's AI drafts; without a key the AI buttons explain it is off.
+  cohereApiKey: process.env.COHERE_API_KEY?.trim() ?? "",
+  cohereModel: process.env.COHERE_MODEL?.trim() || "command-a-plus-05-2026",
   isProduction: process.env.NODE_ENV === "production",
 };
 

@@ -5,9 +5,11 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 
 import { DateChips, EmptyState, Segmented, SourceBadge, STRAVA_ORANGE, formatDay, formatKm, formatPace } from "@/components/dashboard-ui";
 import { AppHeader, C, CoachNote, Pill, Screen, SectionTitle } from "@/components/run-ui";
+import { CoachAiCard } from "@/components/coach-ai-card";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
+import type { AiWorkout } from "@/shared/coach-ai";
 
 type Effort = "easy" | "challenging" | "intense";
 type CoachTab = "team" | "review" | "create";
@@ -23,6 +25,18 @@ type WorkoutStepDraft = {
 type ActivityDraft = { date: string; distance: string; minutes: string; note: string; effort: Effort };
 
 const emptyStep = (): WorkoutStepDraft => ({ kind: "run", label: "Corrida leve", durationMinutes: "30", distanceKm: "", targetPace: "", instruction: "" });
+/** Turns an AI draft into the form's text fields, so the coach edits it like any workout. */
+function stepDraftsFrom(workout: AiWorkout): WorkoutStepDraft[] {
+  return workout.steps.map((step) => ({
+    kind: step.kind,
+    label: step.label,
+    durationMinutes: step.durationSeconds ? String(Math.round((step.durationSeconds / 60) * 10) / 10) : "",
+    distanceKm: step.distanceMeters ? String(Math.round(step.distanceMeters / 100) / 10) : "",
+    targetPace: step.targetPaceSecondsPerKm ? `${Math.floor(step.targetPaceSecondsPerKm / 60)}:${String(step.targetPaceSecondsPerKm % 60).padStart(2, "0")}` : "",
+    instruction: step.instruction ?? "",
+  }));
+}
+
 const emptyActivityDraft = (): ActivityDraft => ({ date: localDate(), distance: "", minutes: "", note: "", effort: "easy" });
 const stepKinds: { value: WorkoutStepDraft["kind"]; label: string }[] = [
   { value: "warmup", label: "Aquecimento" },
@@ -72,6 +86,7 @@ function CoachClub() {
   const createAndAssignWorkout = trpc.club.createAndAssignWorkout.useMutation({ onSuccess: async () => { await Promise.all([utils.club.workouts.invalidate(), utils.club.athletes.invalidate()]); } });
   const assignWorkout = trpc.club.assignWorkout.useMutation({ onSuccess: () => utils.club.myAssignments.invalidate() });
   const reviewActivity = trpc.club.reviewActivity.useMutation({ onSuccess: () => utils.club.coachActivityFeed.invalidate() });
+  const reviewDraft = trpc.ai.reviewDraft.useMutation();
 
   const [title, setTitle] = useState("");
   const [objective, setObjective] = useState("");
@@ -166,6 +181,25 @@ function CoachClub() {
     }
   };
 
+  const applyAiWorkout = (workout: AiWorkout, date: string) => {
+    setTitle(workout.title);
+    setObjective(workout.objective);
+    setDescription(workout.description);
+    setStepDrafts(stepDraftsFrom(workout));
+    setScheduledDate(date);
+  };
+
+  const draftReview = async (activityId: number) => {
+    setNotice("");
+    try {
+      const draft = await reviewDraft.mutateAsync({ activityId, today: localDate() });
+      setReviewDrafts((current) => ({ ...current, [activityId]: draft.comment }));
+      setReviewRatings((current) => ({ ...current, [activityId]: draft.rating }));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "A IA não respondeu agora.");
+    }
+  };
+
   const pageError = pending.error || athletes.error || workouts.error || feed.error;
   const toReview = (feed.data ?? []).filter((entry) => !entry.review);
   const [tab, setTab] = useState<CoachTab | null>(null);
@@ -228,6 +262,10 @@ function CoachClub() {
             {activity.athleteNote ? <Text style={styles.athleteNote}>“{activity.athleteNote}”</Text> : null}
             {review ? <View style={styles.reviewed}><Text style={styles.reviewedTitle}>Sua avaliação · {review.rating}/5</Text><Text style={styles.cardDetail}>{review.comment}</Text></View> : <>
               <View style={styles.ratingRow}>{[1, 2, 3, 4, 5].map((rating) => <Pressable key={rating} accessibilityLabel={`Avaliar com ${rating} de 5`} onPress={() => setReviewRatings((current) => ({ ...current, [activity.id]: rating }))} style={styles.starButton}><Ionicons name={rating <= (reviewRatings[activity.id] ?? 5) ? "star" : "star-outline"} size={24} color={C.limeDeep} /></Pressable>)}</View>
+              <Pressable disabled={reviewDraft.isPending} onPress={() => draftReview(activity.id)} style={({ pressed }) => [styles.aiDraftButton, reviewDraft.isPending && styles.disabled, pressed && styles.pressed]}>
+                {reviewDraft.isPending && reviewDraft.variables?.activityId === activity.id ? <ActivityIndicator size="small" color={C.ink} /> : <Ionicons name="sparkles" size={14} color={C.ink} />}
+                <Text style={styles.aiDraftText}>Rascunho com IA</Text>
+              </Pressable>
               <TextInput value={reviewDrafts[activity.id] ?? ""} onChangeText={(value) => setReviewDrafts((current) => ({ ...current, [activity.id]: value }))} placeholder="Deixe seu comentário para o aluno" placeholderTextColor={C.muted} multiline style={[styles.input, styles.reviewInput]} />
               <Pressable disabled={reviewActivity.isPending} onPress={() => saveReview(activity.id)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}><Text style={styles.primaryButtonText}>Enviar avaliação</Text></Pressable>
             </>}
@@ -238,6 +276,12 @@ function CoachClub() {
       </> : null}
 
       {activeTab === "create" ? <>
+        <CoachAiCard
+          athleteId={selectedAthlete}
+          athleteName={(() => { const athlete = athletes.data?.find((athlete) => athlete.userId === selectedAthlete); return athlete ? athlete.name || athlete.email : null; })()}
+          date={scheduledDate}
+          onApply={applyAiWorkout}
+        />
         <View style={styles.formCard}>
           <Text style={styles.formSection}>1 · O treino</Text>
           <Text style={styles.formLabel}>Nome do treino</Text>
@@ -520,6 +564,8 @@ const styles = StyleSheet.create({
   reviewed: { padding: 12, borderRadius: 14, backgroundColor: C.sky, gap: 4 },
   reviewedTitle: { color: C.ink, fontSize: 11, fontWeight: "900" },
   ratingRow: { flexDirection: "row", gap: 6 },
+  aiDraftButton: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 999, backgroundColor: C.lime, marginBottom: 2 },
+  aiDraftText: { color: C.ink, fontSize: 12, fontWeight: "900" },
   starButton: { padding: 3 },
   notice: { color: C.inkSoft, backgroundColor: C.sky, padding: 11, borderRadius: 13, marginBottom: 12, fontSize: 12, lineHeight: 17, fontWeight: "700" },
   errorCard: { padding: 13, backgroundColor: "#F9D5CC", borderRadius: 14, marginBottom: 13 },

@@ -1,6 +1,7 @@
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { accountRouter } from "./routers/account";
+import { aiRouter } from "./routers/ai";
 import { clubRouter } from "./routers/club";
 import { insightsRouter } from "./routers/insights";
 import { stravaRouter } from "./routers/strava";
@@ -16,6 +17,7 @@ export const appRouter = router({
   club: clubRouter,
   strava: stravaRouter,
   insights: insightsRouter,
+  ai: aiRouter,
 });
 
 export type AppRouter = typeof appRouter;
