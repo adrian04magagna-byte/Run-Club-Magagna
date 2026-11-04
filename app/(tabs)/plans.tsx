@@ -11,7 +11,7 @@ export default function PlansScreen() {
   const { user } = useAuth();
   const isCoach = user?.role === "admin";
   const workouts = trpc.club.workouts.useQuery(undefined, { enabled: isCoach });
-  const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: !isCoach });
+  const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: Boolean(user) && !isCoach });
   const loading = isCoach ? workouts.isLoading : assignments.isLoading;
   const nextAssignment = assignments.data?.find((assignment) => assignment.status === "assigned");
   if (loading) return <Screen><View style={styles.empty}><Text style={styles.currentText}>Carregando seu plano…</Text></View></Screen>;

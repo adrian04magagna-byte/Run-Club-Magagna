@@ -6,6 +6,7 @@ import { Redirect, useRouter } from "expo-router";
 
 import { BackButton, C, CoachNote, Pill, PrimaryButton, Screen, SectionTitle } from "@/components/run-ui";
 import { MemberGate } from "@/components/member-gate";
+import { appWebUrl } from "@/constants/oauth";
 import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 import {
@@ -22,7 +23,7 @@ const PAGE_SIZE = 20;
 
 function getStravaRedirectUri(): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
-    return `${window.location.origin}${STRAVA_CALLBACK_PATH}`;
+    return appWebUrl(STRAVA_CALLBACK_PATH);
   }
   return ExpoLinking.createURL(STRAVA_CALLBACK_PATH, { scheme: RUN_CLUB_APP_SCHEME });
 }

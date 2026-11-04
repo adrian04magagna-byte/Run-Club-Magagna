@@ -3,8 +3,8 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleShee
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { AppMark, C, Screen } from "@/components/run-ui";
-import * as Auth from "@/lib/_core/auth";
-import { startOAuthLogin } from "@/constants/oauth";
+import { oauthErrorMessage, startGoogleLogin } from "@/constants/oauth";
+import { completeSignIn } from "@/lib/_core/api";
 import { trpc } from "@/lib/trpc";
 
 export default function LoginScreen() {
@@ -15,8 +15,11 @@ export default function LoginScreen() {
   const [notice, setNotice] = useState(() => reason === "rejected"
     ? "Este cadastro não foi aprovado. Fale com seu treinador para saber como continuar."
     : reason === "not-athlete"
-      ? "Esta conta não é um aluno aprovado nem está configurada como conta do treinador. Use o botão de acesso do treinador ou fale com ele."
-      : "");
+      ? "Esta conta não é um aluno aprovado nem está configurada como conta do treinador. Fale com seu treinador."
+      : reason === "session"
+        ? "Não foi possível confirmar sua sessão. Entre novamente."
+        : "");
+  const [googleBusy, setGoogleBusy] = useState(false);
   const signIn = trpc.account.signIn.useMutation();
 
   const submit = async () => {
@@ -31,23 +34,33 @@ export default function LoginScreen() {
         setNotice("Este cadastro não foi aprovado. Fale com seu treinador para saber como continuar.");
         return;
       }
-      if (result.sessionToken) await Auth.setSessionToken(result.sessionToken);
-      await Auth.setUserInfo({
-        ...result.user,
-        lastSignedIn: new Date(result.user.lastSignedIn),
-      });
+      if (!(await completeSignIn(result.sessionToken))) throw new Error("Não foi possível confirmar sua sessão.");
       router.replace("/(tabs)");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Não foi possível entrar agora.");
     }
   };
 
-  const coachLogin = async () => {
+  const googleLogin = async () => {
     setNotice("");
+    setGoogleBusy(true);
     try {
-      await startOAuthLogin();
+      // On web this navigates away; the result arrives at /oauth/callback.
+      const result = await startGoogleLogin();
+      if (!result) return;
+      if (result.kind === "token") {
+        if (!(await completeSignIn(result.token))) throw new Error("Não foi possível confirmar sua sessão.");
+        router.replace("/(tabs)");
+      } else if (result.kind === "status") {
+        if (result.status === "pending") router.replace({ pathname: "/pending", params: { email: result.email } });
+        else setNotice("Este cadastro não foi aprovado. Fale com seu treinador para saber como continuar.");
+      } else {
+        setNotice(oauthErrorMessage(result.error));
+      }
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "O acesso do treinador não está disponível neste momento.");
+      setNotice(error instanceof Error ? error.message : oauthErrorMessage("google_failed"));
+    } finally {
+      setGoogleBusy(false);
     }
   };
 
@@ -74,9 +87,14 @@ export default function LoginScreen() {
           <Text style={styles.linkText}>Ainda não tem conta? <Text style={styles.linkStrong}>Cadastre-se</Text></Text>
         </Pressable>
 
-        <View style={styles.divider}><View style={styles.dividerLine} /><Text style={styles.dividerText}>ACESSO DO TREINADOR</Text><View style={styles.dividerLine} /></View>
-        <Pressable onPress={coachLogin} style={({ pressed }) => [styles.coachButton, pressed && styles.pressed]}>
-          <Text style={styles.coachButtonText}>Entrar com a conta do treinador</Text>
+        <View style={styles.divider}><View style={styles.dividerLine} /><Text style={styles.dividerText}>OU</Text><View style={styles.dividerLine} /></View>
+        <Pressable disabled={googleBusy} onPress={googleLogin} accessibilityRole="button" style={({ pressed }) => [styles.coachButton, googleBusy && styles.disabled, pressed && styles.pressed]}>
+          {googleBusy ? <ActivityIndicator color={C.ink} /> : (
+            <View style={styles.googleRow}><Text style={styles.googleMark}>G</Text><Text style={styles.coachButtonText}>Continuar com Google</Text></View>
+          )}
+        </Pressable>
+        <Pressable onPress={() => router.push({ pathname: "/signup", params: { coach: "1" } })} style={({ pressed }) => [styles.linkButton, pressed && styles.pressed]}>
+          <Text style={styles.linkText}>É o treinador? <Text style={styles.linkStrong}>Primeiro acesso</Text></Text>
         </Pressable>
       </KeyboardAvoidingView>
     </Screen>
@@ -107,4 +125,6 @@ const styles = StyleSheet.create({
   dividerText: { color: C.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
   coachButton: { minHeight: 50, borderRadius: 16, borderWidth: 1, borderColor: C.line, backgroundColor: C.white, alignItems: "center", justifyContent: "center" },
   coachButtonText: { color: C.ink, fontSize: 13, fontWeight: "800" },
+  googleRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  googleMark: { color: C.ink, fontSize: 16, fontWeight: "900" },
 });

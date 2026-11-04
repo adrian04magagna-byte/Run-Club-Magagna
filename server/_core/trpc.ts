@@ -5,7 +5,7 @@ import superjson from "superjson";
 import { athleteAccounts } from "../../drizzle/schema";
 import type { TrpcContext } from "./context";
 import { getDb } from "../db";
-import { ENV } from "./env";
+import { isCoachEmail } from "./env";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -53,10 +53,7 @@ export const adminProcedure = t.procedure.use(
   t.middleware(async (opts) => {
     const { ctx, next } = opts;
 
-    const configuredCoach = Boolean(ctx.user && (
-      (Boolean(ENV.ownerOpenId) && ctx.user.openId === ENV.ownerOpenId) ||
-      (Boolean(ENV.coachEmail) && ctx.user.email?.trim().toLowerCase() === ENV.coachEmail.trim().toLowerCase())
-    ));
+    const configuredCoach = Boolean(ctx.user && isCoachEmail(ctx.user.email));
     if (!ctx.user || ctx.user.role !== "admin" || !configuredCoach) {
       throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
     }

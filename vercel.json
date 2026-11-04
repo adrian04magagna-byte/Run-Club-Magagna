@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "",
+  "outputDirectory": "vercel-public",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api" }],
+  "functions": {
+    "api/index.ts": { "maxDuration": 15, "includeFiles": "drizzle/**" }
+  }
+}

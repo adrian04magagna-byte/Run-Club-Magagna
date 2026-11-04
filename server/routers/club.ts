@@ -13,7 +13,7 @@ import {
   workouts,
 } from "../../drizzle/schema";
 import { adminProcedure, athleteProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, isUniqueViolation } from "../db";
 import { getProfileAvatarUrl } from "../storage/profile-avatars";
 
 const stepInput = z.object({
@@ -108,8 +108,9 @@ export const clubRouter = router({
   rejectAthlete: adminProcedure.input(z.object({ athleteId: z.number().int().positive() })).mutation(async ({ input }) => {
     const db = await requireDb();
     const result = await db.update(athleteAccounts).set({ status: "rejected" })
-      .where(and(eq(athleteAccounts.userId, input.athleteId), eq(athleteAccounts.status, "pending")));
-    if (!result[0].affectedRows) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido pendente não encontrado." });
+      .where(and(eq(athleteAccounts.userId, input.athleteId), eq(athleteAccounts.status, "pending")))
+      .returning({ userId: athleteAccounts.userId });
+    if (!result.length) throw new TRPCError({ code: "NOT_FOUND", message: "Pedido pendente não encontrado." });
     return { success: true };
   }),
 
@@ -130,7 +131,7 @@ export const clubRouter = router({
         objective: input.objective,
         description: input.description || null,
         level: input.level,
-      }).$returningId();
+      }).returning({ id: workouts.id });
       const id = inserted[0]?.id;
       if (!id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível salvar o treino." });
       await tx.insert(workoutSteps).values(input.steps.map((step, index) => ({
@@ -164,7 +165,7 @@ export const clubRouter = router({
         objective: input.objective,
         description: input.description || null,
         level: input.level,
-      }).$returningId();
+      }).returning({ id: workouts.id });
       const workoutId = inserted[0]?.id;
       if (!workoutId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível salvar o treino." });
       await tx.insert(workoutSteps).values(input.steps.map((step, index) => ({
@@ -182,7 +183,7 @@ export const clubRouter = router({
         athleteId: input.athleteId,
         workoutId,
         scheduledDate: input.scheduledDate,
-      }).$returningId();
+      }).returning({ id: workoutAssignments.id });
       const assignmentId = assignment[0]?.id;
       if (!assignmentId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível atribuir o treino." });
       return { workoutId, assignmentId };
@@ -204,7 +205,7 @@ export const clubRouter = router({
       athleteId: input.athleteId,
       workoutId: input.workoutId,
       scheduledDate: input.scheduledDate,
-    }).$returningId();
+    }).returning({ id: workoutAssignments.id });
     return { assignmentId: inserted[0]?.id ?? null };
   }),
 
@@ -277,8 +278,8 @@ export const clubRouter = router({
           completedAt,
           perceivedEffort: input.perceivedEffort,
           athleteNote: input.athleteNote || null,
-          shareWithCoach: 1,
-        }).$returningId();
+          shareWithCoach: true,
+        }).returning({ id: activities.id });
         if (assignmentId) {
           await tx.update(workoutAssignments).set({ status: "completed", completedAt })
             .where(eq(workoutAssignments.id, assignmentId));
@@ -287,7 +288,7 @@ export const clubRouter = router({
       });
     } catch (error) {
       if (error instanceof TRPCError) throw error;
-      if (input.assignmentId && String(error).includes("Duplicate entry")) {
+      if (input.assignmentId && isUniqueViolation(error)) {
         throw new TRPCError({ code: "CONFLICT", message: "Este treino já foi registrado." });
       }
       throw error;
@@ -313,7 +314,7 @@ export const clubRouter = router({
         eq(coachAthletes.coachId, ctx.user.id),
         // Strava-imported activities remain private to the athlete even if a legacy row is present.
         eq(activities.source, "manual"),
-        eq(activities.shareWithCoach, 1),
+        eq(activities.shareWithCoach, true),
       ))
       .orderBy(desc(activities.completedAt));
     return Promise.all(rows.map(async ({ athleteProfileName, athleteAvatarKey, athleteId, ...row }) => ({
@@ -336,7 +337,7 @@ export const clubRouter = router({
         eq(activities.id, input.activityId),
         eq(coachAthletes.coachId, ctx.user.id),
         eq(activities.source, "manual"),
-        eq(activities.shareWithCoach, 1),
+        eq(activities.shareWithCoach, true),
       )).limit(1);
     if (!rows.length) throw new TRPCError({ code: "NOT_FOUND", message: "Atividade não encontrada ou não compartilhada com você." });
     await db.insert(activityReviews).values({
@@ -344,7 +345,10 @@ export const clubRouter = router({
       coachId: ctx.user.id,
       rating: input.rating,
       comment: input.comment,
-    }).onDuplicateKeyUpdate({ set: { rating: input.rating, comment: input.comment, updatedAt: new Date() } });
+    }).onConflictDoUpdate({
+      target: activityReviews.activityId,
+      set: { rating: input.rating, comment: input.comment, updatedAt: new Date() },
+    });
     return { success: true };
   }),
 });

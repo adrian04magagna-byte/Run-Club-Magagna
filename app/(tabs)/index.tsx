@@ -10,8 +10,8 @@ export default function TodayScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const isCoach = user?.role === "admin";
-  const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: !isCoach });
-  const activities = trpc.club.myActivities.useQuery(undefined, { enabled: !isCoach });
+  const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: Boolean(user) && !isCoach });
+  const activities = trpc.club.myActivities.useQuery(undefined, { enabled: Boolean(user) && !isCoach });
   const pending = trpc.club.pendingAthletes.useQuery(undefined, { enabled: isCoach });
   const athletes = trpc.club.athletes.useQuery(undefined, { enabled: isCoach });
   const feed = trpc.club.coachActivityFeed.useQuery(undefined, { enabled: isCoach });

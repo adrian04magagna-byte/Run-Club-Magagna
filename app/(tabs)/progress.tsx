@@ -10,8 +10,8 @@ export default function ProgressScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const isCoach = user?.role === "admin";
-  const ownActivities = trpc.club.myActivities.useQuery(undefined, { enabled: !isCoach });
-  const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: !isCoach });
+  const ownActivities = trpc.club.myActivities.useQuery(undefined, { enabled: Boolean(user) && !isCoach });
+  const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: Boolean(user) && !isCoach });
   const coachFeed = trpc.club.coachActivityFeed.useQuery(undefined, { enabled: isCoach });
   const allActivities = isCoach ? (coachFeed.data ?? []).map((item) => item.activity) : (ownActivities.data ?? []);
   const weekStart = new Date();

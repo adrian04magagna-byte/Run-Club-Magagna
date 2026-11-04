@@ -138,7 +138,10 @@ export function validateStravaReturnUri(input: string, platform: OAuthPlatform, 
       throw trpcError("BAD_REQUEST", "Não foi possível validar o retorno seguro do Strava.");
     }
     const secureOrigin = origin.protocol === "https:" || (origin.protocol === "http:" && isLoopback(origin.hostname));
-    if (!secureOrigin || url.origin !== origin.origin || url.pathname !== STRAVA_CLIENT_CALLBACK_PATH) {
+    // The web app may live under one sub-path (GitHub Pages: /<repo>/strava/callback).
+    const callbackPath = url.pathname === STRAVA_CLIENT_CALLBACK_PATH ||
+      new RegExp(`^/[A-Za-z0-9._-]+${STRAVA_CLIENT_CALLBACK_PATH}$`).test(url.pathname);
+    if (!secureOrigin || url.origin !== origin.origin || !callbackPath) {
       throw trpcError("BAD_REQUEST", "Não foi possível validar o retorno seguro do Strava.");
     }
     return url.toString();
@@ -283,8 +286,9 @@ async function consumeOAuthState(userId: number, state: string) {
     throw trpcError("PRECONDITION_FAILED", "A autorização Strava expirou ou não pertence a esta conta. Inicie a conexão novamente.");
   }
   const removed = await db.delete(stravaOAuthStates)
-    .where(and(eq(stravaOAuthStates.stateHash, stateHash), eq(stravaOAuthStates.userId, userId)));
-  if (!removed[0].affectedRows) {
+    .where(and(eq(stravaOAuthStates.stateHash, stateHash), eq(stravaOAuthStates.userId, userId)))
+    .returning({ stateHash: stravaOAuthStates.stateHash });
+  if (!removed.length) {
     throw trpcError("PRECONDITION_FAILED", "Esta autorização Strava já foi utilizada.");
   }
   return record;

@@ -19,10 +19,10 @@ export default function ProfileScreen() {
   const profile = trpc.account.profile.useQuery();
   const saveProfile = trpc.account.saveProfile.useMutation();
   const isCoach = user?.role === "admin";
-  const activities = trpc.club.myActivities.useQuery(undefined, { enabled: !isCoach });
+  const activities = trpc.club.myActivities.useQuery(undefined, { enabled: Boolean(user) && !isCoach });
   const athletes = trpc.club.athletes.useQuery(undefined, { enabled: isCoach });
   const pending = trpc.club.pendingAthletes.useQuery(undefined, { enabled: isCoach });
-  const stravaStatus = trpc.strava.status.useQuery(undefined, { enabled: !isCoach, staleTime: 0 });
+  const stravaStatus = trpc.strava.status.useQuery(undefined, { enabled: Boolean(user) && !isCoach, staleTime: 0 });
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [avatarDraftUri, setAvatarDraftUri] = useState<string | null>(null);

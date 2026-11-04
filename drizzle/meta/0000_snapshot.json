@@ -1,106 +1,1143 @@
 {
-  "version": "5",
-  "dialect": "mysql",
-  "id": "3c3a03ea-b871-416a-b531-aa772cca8b00",
+  "id": "33146b31-f1db-4ff0-afed-13a5c04c0c94",
   "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
   "tables": {
-    "users": {
-      "name": "users",
+    "public.activities": {
+      "name": "activities",
+      "schema": "",
       "columns": {
         "id": {
           "name": "id",
-          "type": "int",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "athleteId": {
+          "name": "athleteId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assignmentId": {
+          "name": "assignmentId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "activity_source",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": true
+          "default": "'manual'"
+        },
+        "externalActivityId": {
+          "name": "externalActivityId",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(140)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "distanceMeters": {
+          "name": "distanceMeters",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "durationSeconds": {
+          "name": "durationSeconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "averagePaceSecondsPerKm": {
+          "name": "averagePaceSecondsPerKm",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completedAt": {
+          "name": "completedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "perceivedEffort": {
+          "name": "perceivedEffort",
+          "type": "perceived_effort",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "athleteNote": {
+          "name": "athleteNote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shareWithCoach": {
+          "name": "shareWithCoach",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "activities_assignment_unique": {
+          "name": "activities_assignment_unique",
+          "columns": [
+            {
+              "expression": "assignmentId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "activities_source_external_unique": {
+          "name": "activities_source_external_unique",
+          "columns": [
+            {
+              "expression": "athleteId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "externalActivityId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "activities_athleteId_users_id_fk": {
+          "name": "activities_athleteId_users_id_fk",
+          "tableFrom": "activities",
+          "tableTo": "users",
+          "columnsFrom": [
+            "athleteId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "activities_assignmentId_workout_assignments_id_fk": {
+          "name": "activities_assignmentId_workout_assignments_id_fk",
+          "tableFrom": "activities",
+          "tableTo": "workout_assignments",
+          "columnsFrom": [
+            "assignmentId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.activity_reviews": {
+      "name": "activity_reviews",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "activityId": {
+          "name": "activityId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coachId": {
+          "name": "coachId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rating": {
+          "name": "rating",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "comment": {
+          "name": "comment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "activity_reviews_activity_unique": {
+          "name": "activity_reviews_activity_unique",
+          "columns": [
+            {
+              "expression": "activityId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "activity_reviews_activityId_activities_id_fk": {
+          "name": "activity_reviews_activityId_activities_id_fk",
+          "tableFrom": "activity_reviews",
+          "tableTo": "activities",
+          "columnsFrom": [
+            "activityId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "activity_reviews_coachId_users_id_fk": {
+          "name": "activity_reviews_coachId_users_id_fk",
+          "tableFrom": "activity_reviews",
+          "tableTo": "users",
+          "columnsFrom": [
+            "coachId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.athlete_accounts": {
+      "name": "athlete_accounts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalizedEmail": {
+          "name": "normalizedEmail",
+          "type": "varchar(320)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "passwordHash": {
+          "name": "passwordHash",
+          "type": "varchar(512)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "account_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "athlete_accounts_email_unique": {
+          "name": "athlete_accounts_email_unique",
+          "columns": [
+            {
+              "expression": "normalizedEmail",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "athlete_accounts_user_unique": {
+          "name": "athlete_accounts_user_unique",
+          "columns": [
+            {
+              "expression": "userId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "athlete_accounts_userId_users_id_fk": {
+          "name": "athlete_accounts_userId_users_id_fk",
+          "tableFrom": "athlete_accounts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.coach_athletes": {
+      "name": "coach_athletes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "coachId": {
+          "name": "coachId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "athleteId": {
+          "name": "athleteId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approvedAt": {
+          "name": "approvedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "coach_athletes_pair_unique": {
+          "name": "coach_athletes_pair_unique",
+          "columns": [
+            {
+              "expression": "coachId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "athleteId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "coach_athletes_coachId_users_id_fk": {
+          "name": "coach_athletes_coachId_users_id_fk",
+          "tableFrom": "coach_athletes",
+          "tableTo": "users",
+          "columnsFrom": [
+            "coachId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "coach_athletes_athleteId_users_id_fk": {
+          "name": "coach_athletes_athleteId_users_id_fk",
+          "tableFrom": "coach_athletes",
+          "tableTo": "users",
+          "columnsFrom": [
+            "athleteId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.profile_avatars": {
+      "name": "profile_avatars",
+      "schema": "",
+      "columns": {
+        "avatarKey": {
+          "name": "avatarKey",
+          "type": "varchar(255)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data": {
+          "name": "data",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "profile_avatars_userId_users_id_fk": {
+          "name": "profile_avatars_userId_users_id_fk",
+          "tableFrom": "profile_avatars",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.strava_connections": {
+      "name": "strava_connections",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stravaAthleteHash": {
+          "name": "stravaAthleteHash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encryptedTokenEnvelope": {
+          "name": "encryptedTokenEnvelope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tokenExpiresAt": {
+          "name": "tokenExpiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consentedAt": {
+          "name": "consentedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consentVersion": {
+          "name": "consentVersion",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connectedAt": {
+          "name": "connectedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "strava_connections_user_unique": {
+          "name": "strava_connections_user_unique",
+          "columns": [
+            {
+              "expression": "userId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "strava_connections_athlete_hash_unique": {
+          "name": "strava_connections_athlete_hash_unique",
+          "columns": [
+            {
+              "expression": "stravaAthleteHash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "strava_connections_userId_users_id_fk": {
+          "name": "strava_connections_userId_users_id_fk",
+          "tableFrom": "strava_connections",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.strava_oauth_states": {
+      "name": "strava_oauth_states",
+      "schema": "",
+      "columns": {
+        "stateHash": {
+          "name": "stateHash",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platform": {
+          "name": "platform",
+          "type": "oauth_platform",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "returnUri": {
+          "name": "returnUri",
+          "type": "varchar(2048)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consentedAt": {
+          "name": "consentedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consentVersion": {
+          "name": "consentVersion",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expiresAt": {
+          "name": "expiresAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "strava_oauth_states_userId_users_id_fk": {
+          "name": "strava_oauth_states_userId_users_id_fk",
+          "tableFrom": "strava_oauth_states",
+          "tableTo": "users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
         },
         "openId": {
           "name": "openId",
-          "type": "varchar(64)",
+          "type": "varchar(96)",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "notNull": true
         },
         "name": {
           "name": "name",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
+          "notNull": false
+        },
+        "profileName": {
+          "name": "profileName",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatarKey": {
+          "name": "avatarKey",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
         },
         "email": {
           "name": "email",
           "type": "varchar(320)",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
+          "notNull": false
         },
         "loginMethod": {
           "name": "loginMethod",
           "type": "varchar(64)",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
+          "notNull": false
         },
         "role": {
           "name": "role",
-          "type": "enum('user','admin')",
+          "type": "role",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
           "default": "'user'"
         },
         "createdAt": {
           "name": "createdAt",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": "(now())"
+          "default": "now()"
         },
         "updatedAt": {
           "name": "updatedAt",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "onUpdate": true,
-          "default": "(now())"
+          "default": "now()"
         },
         "lastSignedIn": {
           "name": "lastSignedIn",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": "(now())"
+          "default": "now()"
         }
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "users_id": {
-          "name": "users_id",
-          "columns": ["id"]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "users_openId_unique": {
           "name": "users_openId_unique",
-          "columns": ["openId"]
+          "nullsNotDistinct": false,
+          "columns": [
+            "openId"
+          ]
         }
       },
-      "checkConstraint": {}
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.workout_assignments": {
+      "name": "workout_assignments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "coachId": {
+          "name": "coachId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "athleteId": {
+          "name": "athleteId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workoutId": {
+          "name": "workoutId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduledDate": {
+          "name": "scheduledDate",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "assignment_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'assigned'"
+        },
+        "assignedAt": {
+          "name": "assignedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completedAt": {
+          "name": "completedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "workout_assignments_coachId_users_id_fk": {
+          "name": "workout_assignments_coachId_users_id_fk",
+          "tableFrom": "workout_assignments",
+          "tableTo": "users",
+          "columnsFrom": [
+            "coachId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "workout_assignments_athleteId_users_id_fk": {
+          "name": "workout_assignments_athleteId_users_id_fk",
+          "tableFrom": "workout_assignments",
+          "tableTo": "users",
+          "columnsFrom": [
+            "athleteId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "workout_assignments_workoutId_workouts_id_fk": {
+          "name": "workout_assignments_workoutId_workouts_id_fk",
+          "tableFrom": "workout_assignments",
+          "tableTo": "workouts",
+          "columnsFrom": [
+            "workoutId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.workout_steps": {
+      "name": "workout_steps",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workoutId": {
+          "name": "workoutId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stepOrder": {
+          "name": "stepOrder",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "step_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "durationSeconds": {
+          "name": "durationSeconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "distanceMeters": {
+          "name": "distanceMeters",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "targetPaceSecondsPerKm": {
+          "name": "targetPaceSecondsPerKm",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "instruction": {
+          "name": "instruction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "workout_steps_workoutId_workouts_id_fk": {
+          "name": "workout_steps_workoutId_workouts_id_fk",
+          "tableFrom": "workout_steps",
+          "tableTo": "workouts",
+          "columnsFrom": [
+            "workoutId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.workouts": {
+      "name": "workouts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "coachId": {
+          "name": "coachId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(140)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "objective": {
+          "name": "objective",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "level": {
+          "name": "level",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Todos'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "workouts_coachId_users_id_fk": {
+          "name": "workouts_coachId_users_id_fk",
+          "tableFrom": "workouts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "coachId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
+  "enums": {
+    "public.account_status": {
+      "name": "account_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "approved",
+        "rejected"
+      ]
+    },
+    "public.activity_source": {
+      "name": "activity_source",
+      "schema": "public",
+      "values": [
+        "manual",
+        "strava"
+      ]
+    },
+    "public.assignment_status": {
+      "name": "assignment_status",
+      "schema": "public",
+      "values": [
+        "assigned",
+        "completed",
+        "skipped"
+      ]
+    },
+    "public.oauth_platform": {
+      "name": "oauth_platform",
+      "schema": "public",
+      "values": [
+        "web",
+        "native"
+      ]
+    },
+    "public.perceived_effort": {
+      "name": "perceived_effort",
+      "schema": "public",
+      "values": [
+        "easy",
+        "challenging",
+        "intense"
+      ]
+    },
+    "public.role": {
+      "name": "role",
+      "schema": "public",
+      "values": [
+        "user",
+        "admin"
+      ]
+    },
+    "public.step_kind": {
+      "name": "step_kind",
+      "schema": "public",
+      "values": [
+        "warmup",
+        "run",
+        "recovery",
+        "cooldown"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
   "views": {},
   "_meta": {
+    "columns": {},
     "schemas": {},
-    "tables": {},
-    "columns": {}
-  },
-  "internal": {
-    "tables": {},
-    "indexes": {}
+    "tables": {}
   }
 }

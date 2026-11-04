@@ -13,18 +13,36 @@ export type User = {
   lastSignedIn: Date;
 };
 
-export async function getSessionToken(): Promise<string | null> {
-  try {
-    // Web platform uses cookie-based auth, no manual token management needed
-    if (Platform.OS === "web") {
-      console.log("[Auth] Web platform uses cookie-based auth, skipping token retrieval");
+// The session is a bearer token. On web it lives in localStorage because the app (GitHub Pages)
+// and the API (Vercel) are on different sites, where browsers block third-party cookies.
+async function readItem(key: string): Promise<string | null> {
+  if (Platform.OS === "web") {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
       return null;
     }
+  }
+  return SecureStore.getItemAsync(key);
+}
 
-    // Use SecureStore for native
-    console.log("[Auth] Getting session token...");
-    const token = await SecureStore.getItemAsync(SESSION_TOKEN_KEY);
-    return token;
+async function writeItem(key: string, value: string | null): Promise<void> {
+  if (Platform.OS === "web") {
+    try {
+      if (value === null) window.localStorage.removeItem(key);
+      else window.localStorage.setItem(key, value);
+    } catch {
+      // Private browsing can block storage; the session then lasts only for this page.
+    }
+    return;
+  }
+  if (value === null) await SecureStore.deleteItemAsync(key);
+  else await SecureStore.setItemAsync(key, value);
+}
+
+export async function getSessionToken(): Promise<string | null> {
+  try {
+    return await readItem(SESSION_TOKEN_KEY);
   } catch {
     console.error("[Auth] Failed to get session token");
     return null;
@@ -32,35 +50,12 @@ export async function getSessionToken(): Promise<string | null> {
 }
 
 export async function setSessionToken(token: string): Promise<void> {
-  try {
-    // Web platform uses cookie-based auth, no manual token management needed
-    if (Platform.OS === "web") {
-      console.log("[Auth] Web platform uses cookie-based auth, skipping token storage");
-      return;
-    }
-
-    // Use SecureStore for native
-    console.log("[Auth] Setting session token...");
-    await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token);
-    console.log("[Auth] Session token stored in SecureStore successfully");
-  } catch (error) {
-    console.error("[Auth] Failed to set session token");
-    throw error;
-  }
+  await writeItem(SESSION_TOKEN_KEY, token);
 }
 
 export async function removeSessionToken(): Promise<void> {
   try {
-    // Web platform uses cookie-based auth, logout is handled by server clearing cookie
-    if (Platform.OS === "web") {
-      console.log("[Auth] Web platform uses cookie-based auth, skipping token removal");
-      return;
-    }
-
-    // Use SecureStore for native
-    console.log("[Auth] Removing session token...");
-    await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY);
-    console.log("[Auth] Session token removed from SecureStore successfully");
+    await writeItem(SESSION_TOKEN_KEY, null);
   } catch {
     console.error("[Auth] Failed to remove session token");
   }
@@ -68,24 +63,8 @@ export async function removeSessionToken(): Promise<void> {
 
 export async function getUserInfo(): Promise<User | null> {
   try {
-    console.log("[Auth] Getting user info...");
-
-    let info: string | null = null;
-    if (Platform.OS === "web") {
-      // Use localStorage for web
-      info = window.localStorage.getItem(USER_INFO_KEY);
-    } else {
-      // Use SecureStore for native
-      info = await SecureStore.getItemAsync(USER_INFO_KEY);
-    }
-
-    if (!info) {
-      console.log("[Auth] No user info found");
-      return null;
-    }
-    const user = JSON.parse(info);
-    console.log("[Auth] User info retrieved");
-    return user;
+    const info = await readItem(USER_INFO_KEY);
+    return info ? (JSON.parse(info) as User) : null;
   } catch {
     console.error("[Auth] Failed to get user info");
     return null;
@@ -94,18 +73,7 @@ export async function getUserInfo(): Promise<User | null> {
 
 export async function setUserInfo(user: User): Promise<void> {
   try {
-    console.log("[Auth] Setting user info...");
-
-    if (Platform.OS === "web") {
-      // Use localStorage for web
-      window.localStorage.setItem(USER_INFO_KEY, JSON.stringify(user));
-      console.log("[Auth] User info stored in localStorage successfully");
-      return;
-    }
-
-    // Use SecureStore for native
-    await SecureStore.setItemAsync(USER_INFO_KEY, JSON.stringify(user));
-    console.log("[Auth] User info stored in SecureStore successfully");
+    await writeItem(USER_INFO_KEY, JSON.stringify(user));
   } catch {
     console.error("[Auth] Failed to set user info");
   }
@@ -113,14 +81,7 @@ export async function setUserInfo(user: User): Promise<void> {
 
 export async function clearUserInfo(): Promise<void> {
   try {
-    if (Platform.OS === "web") {
-      // Use localStorage for web
-      window.localStorage.removeItem(USER_INFO_KEY);
-      return;
-    }
-
-    // Use SecureStore for native
-    await SecureStore.deleteItemAsync(USER_INFO_KEY);
+    await writeItem(USER_INFO_KEY, null);
   } catch {
     console.error("[Auth] Failed to clear user info");
   }

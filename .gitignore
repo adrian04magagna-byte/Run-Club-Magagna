@@ -65,3 +65,7 @@ Thumbs.db
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
+
+# local
+.env
+.local-db/
