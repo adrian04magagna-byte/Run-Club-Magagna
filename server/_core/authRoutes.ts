@@ -7,6 +7,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { athleteAccounts, users } from "../../drizzle/schema";
 import { getDb } from "../db";
 import { accountUser } from "../routers/account";
+import { uploadProfileAvatar } from "../storage/profile-avatars";
 import { ENV, isCoachEmail } from "./env";
 import { authenticateRequest, createSessionToken, touchLastSignedIn } from "./session";
 
@@ -43,7 +44,7 @@ function isSecure(req: Request) {
   return req.protocol === "https" || String(req.headers["x-forwarded-proto"] ?? "").split(",")[0]?.trim() === "https";
 }
 
-type GoogleProfile = { sub: string; email: string; name: string | null };
+type GoogleProfile = { sub: string; email: string; name: string | null; picture: string | null };
 
 async function fetchGoogleProfile(code: string): Promise<GoogleProfile | null> {
   const tokenResponse = await fetch(GOOGLE_TOKEN_URL, {
@@ -65,7 +66,42 @@ async function fetchGoogleProfile(code: string): Promise<GoogleProfile | null> {
   if (!infoResponse.ok) return null;
   const info = (await infoResponse.json()) as Record<string, unknown>;
   if (typeof info.sub !== "string" || typeof info.email !== "string" || info.email_verified !== true) return null;
-  return { sub: info.sub, email: info.email.trim().toLowerCase(), name: typeof info.name === "string" ? info.name : null };
+  return {
+    sub: info.sub,
+    email: info.email.trim().toLowerCase(),
+    name: typeof info.name === "string" ? info.name : null,
+    picture: typeof info.picture === "string" ? info.picture : null,
+  };
+}
+
+/** Only Google's own photo host is fetched, so the profile cannot point the server elsewhere. */
+function googlePhotoUrl(picture: string | null): URL | null {
+  if (!picture) return null;
+  try {
+    const url = new URL(picture);
+    if (url.protocol !== "https:" || !url.hostname.endsWith(".googleusercontent.com")) return null;
+    // Ask for a 256px square crop instead of the default 96px.
+    url.pathname = url.pathname.replace(/=[^/]*$/, "") + "=s256-c";
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/** Copies the Google profile photo for people who have not chosen one yet. Best effort. */
+async function importGooglePhoto(userId: number, picture: string | null) {
+  const url = googlePhotoUrl(picture);
+  if (!url) return;
+  try {
+    const response = await fetch(url, { headers: { Accept: "image/jpeg" }, redirect: "error" });
+    if (!response.ok) return;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const avatarKey = await uploadProfileAvatar(userId, bytes.toString("base64"));
+    const db = await getDb();
+    await db?.update(users).set({ avatarKey }).where(eq(users.id, userId));
+  } catch {
+    console.warn("[Auth] Could not import Google profile photo");
+  }
 }
 
 /**
@@ -169,6 +205,7 @@ export function registerAuthRoutes(app: Express) {
         return;
       }
       const { user, status } = await signInGoogleProfile(profile);
+      if (!user.avatarKey) await importGooglePhoto(user.id, profile.picture);
       if (status !== "approved") {
         redirectWithFragment(res, returnTo, { status, email: profile.email });
         return;
