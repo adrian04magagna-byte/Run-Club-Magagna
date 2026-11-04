@@ -100,7 +100,7 @@ export default function ProgressScreen() {
               </Text>
               <Text style={styles.consistencyText}>
                 Média de {runsPerWeek.toFixed(1).replace(".", ",")} {runsPerWeek >= 1.95 || runsPerWeek < 1 ? "corridas" : "corrida"} por semana.
-                {data.last7.streakDays > 1 ? ` Você está numa sequência de ${data.last7.streakDays} dias.` : ""}
+                {data.week.streakDays > 1 ? ` Você está numa sequência de ${data.week.streakDays} dias.` : ""}
               </Text>
             </View>
           </View>

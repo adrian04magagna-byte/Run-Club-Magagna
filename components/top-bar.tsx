@@ -12,7 +12,7 @@ import { useInsights } from "@/hooks/use-insights";
 import { trpc } from "@/lib/trpc";
 
 /**
- * The dark app bar: brand, a seven-day summary and the profile photo. On desktop it is the tab bar
+ * The dark app bar: brand, this week's summary and the profile photo. On desktop it is the tab bar
  * (pass the tab props and the tabs show as pills); on phones it is the screen header and the tabs stay
  * at the bottom. It shares the dashboard's insights query (same period and day), so it adds no Strava reads.
  */
@@ -23,7 +23,7 @@ export function TopBar({ tabs }: { tabs?: BottomTabBarProps }) {
   const { user } = useAuth();
   const profile = trpc.account.profile.useQuery(undefined, { enabled: Boolean(user) });
   const insights = useInsights(Boolean(user));
-  const last7 = insights.data?.last7;
+  const week = insights.data?.week;
   const name = profile.data?.name || user?.name || "";
 
   return (
@@ -37,15 +37,15 @@ export function TopBar({ tabs }: { tabs?: BottomTabBarProps }) {
         {tabs ? <TabPills {...tabs} /> : null}
 
         <View style={styles.right}>
-          {last7 ? (
+          {week ? (
             <>
               <View style={styles.chip}>
-                <Text style={styles.chipMuted}>7 dias</Text>
-                <Text style={styles.chipStrong}>{formatKm(last7.distanceMeters)} km</Text>
+                <Text style={styles.chipMuted}>Semana</Text>
+                <Text style={styles.chipStrong}>{formatKm(week.distanceMeters)} km</Text>
               </View>
               <View style={styles.chip}>
                 <Ionicons name="flame" size={14} color={C.lime} />
-                <Text style={[styles.chipStrong, styles.chipLime]}>{last7.streakDays}</Text>
+                <Text style={[styles.chipStrong, styles.chipLime]}>{week.streakDays}</Text>
               </View>
             </>
           ) : null}

@@ -154,7 +154,8 @@ export function FloatingStats({ stats, grid = false }: { stats: FloatingStat[]; 
  * Bar chart scaled to its own maximum. Tapping a bar shows its value; the last bar is highlighted
  * as "now". Long series hide most labels so they stay readable on a phone.
  */
-export function BarChart({ buckets, dark = false, height = 120, unit = "km" }: { buckets: InsightBucket[]; dark?: boolean; height?: number; unit?: string }) {
+/** `highlight` marks the current bucket (the last one by default; today in a Monday-to-Sunday week). */
+export function BarChart({ buckets, dark = false, height = 120, unit = "km", highlight = buckets.length - 1 }: { buckets: InsightBucket[]; dark?: boolean; height?: number; unit?: string; highlight?: number }) {
   const [selected, setSelected] = useState<number | null>(null);
   const max = Math.max(...buckets.map((bucket) => bucket.distanceMeters), 1);
   const labelEvery = buckets.length > 14 ? Math.ceil(buckets.length / 7) : 1;
@@ -175,7 +176,7 @@ export function BarChart({ buckets, dark = false, height = 120, unit = "km" }: {
       <View style={[styles.chart, { height }]}>
         {buckets.map((bucket, index) => {
           const ratio = bucket.distanceMeters / max;
-          const isLast = index === buckets.length - 1;
+          const isLast = index === highlight;
           const isFocus = focus === index;
           return (
             <Pressable
@@ -202,7 +203,7 @@ export function BarChart({ buckets, dark = false, height = 120, unit = "km" }: {
         {buckets.map((bucket, index) => (
           <Text
             key={`${bucket.from}-label`}
-            style={[styles.chartLabel, dark && styles.mutedOnDark, (index === buckets.length - 1 || focus === index) && (dark ? styles.textOnDark : styles.chartLabelHot)]}
+            style={[styles.chartLabel, dark && styles.mutedOnDark, (index === highlight || focus === index) && (dark ? styles.textOnDark : styles.chartLabelHot)]}
             numberOfLines={1}
           >
             {(buckets.length - 1 - index) % labelEvery === 0 ? bucket.label : ""}

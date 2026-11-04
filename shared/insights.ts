@@ -39,6 +39,12 @@ export function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
+/** Monday of the calendar week that holds `date` (weeks run Monday to Sunday, like Strava). */
+export function startOfWeek(date: string): string {
+  const weekday = new Date(`${date}T12:00:00.000Z`).getUTCDay();
+  return addDays(date, -((weekday + 6) % 7));
+}
+
 export function paceSecondsPerKm(distanceMeters: number, movingSeconds: number): number | null {
   return distanceMeters >= 100 && movingSeconds > 0 ? Math.round((movingSeconds * 1000) / distanceMeters) : null;
 }
@@ -83,11 +89,21 @@ export function dailyBuckets(entries: TrainingEntry[], today: string, days: numb
   });
 }
 
+/** Monday-to-Sunday days of the week that starts on `monday`; days still ahead stay empty. */
+export function weekDays(entries: TrainingEntry[], monday: string): InsightBucket[] {
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = addDays(monday, index);
+    return bucket(entries, WEEKDAYS[(index + 1) % 7], day, day);
+  });
+}
+
+/** Calendar weeks (Monday to Sunday) ending with the current one. */
 export function weeklyBuckets(entries: TrainingEntry[], today: string, weeks: number): InsightBucket[] {
+  const currentMonday = startOfWeek(today);
   return Array.from({ length: weeks }, (_, index) => {
-    const to = addDays(today, -7 * (weeks - 1 - index));
-    const from = addDays(to, -6);
-    return bucket(entries, `${from.slice(8, 10)}/${from.slice(5, 7)}`, from, to);
+    const from = addDays(currentMonday, -7 * (weeks - 1 - index));
+    const sunday = addDays(from, 6);
+    return bucket(entries, `${from.slice(8, 10)}/${from.slice(5, 7)}`, from, sunday < today ? sunday : today);
   });
 }
 

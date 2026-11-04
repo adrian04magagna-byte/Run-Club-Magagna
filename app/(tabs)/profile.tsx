@@ -31,7 +31,7 @@ export default function ProfileScreen() {
 
   const weekStart = new Date();
   weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(weekStart.getDate() - 6);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
   const thisWeek = (activities.data ?? []).filter((activity) => new Date(activity.completedAt) >= weekStart);
   const weekKm = thisWeek.reduce((total, activity) => total + activity.distanceMeters, 0) / 1000;
   const displayName = profile.data?.name || user?.name || user?.email || "Sua conta";
@@ -165,7 +165,7 @@ export default function ProfileScreen() {
 
     <View style={styles.gap} />
     <SectionTitle title={isCoach ? "Sua turma" : "Seu momento"} />
-    <View style={styles.momentCard}>{isCoach ? <><View style={styles.momentItem}><Ionicons name="people-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{athletes.data?.length ?? 0}</Text><Text style={styles.momentLabel}>alunos aprovados</Text></View></View><View style={styles.momentLine} /><View style={styles.momentItem}><Ionicons name="hourglass-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{pending.data?.length ?? 0}</Text><Text style={styles.momentLabel}>pedidos pendentes</Text></View></View></> : <><View style={styles.momentItem}><Ionicons name="footsteps-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{weekKm.toFixed(1)} km</Text><Text style={styles.momentLabel}>registrados em 7 dias</Text></View></View><View style={styles.momentLine} /><View style={styles.momentItem}><Ionicons name="flame-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{thisWeek.length}</Text><Text style={styles.momentLabel}>atividades registradas</Text></View></View></>}</View>
+    <View style={styles.momentCard}>{isCoach ? <><View style={styles.momentItem}><Ionicons name="people-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{athletes.data?.length ?? 0}</Text><Text style={styles.momentLabel}>alunos aprovados</Text></View></View><View style={styles.momentLine} /><View style={styles.momentItem}><Ionicons name="hourglass-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{pending.data?.length ?? 0}</Text><Text style={styles.momentLabel}>pedidos pendentes</Text></View></View></> : <><View style={styles.momentItem}><Ionicons name="footsteps-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{weekKm.toFixed(1)} km</Text><Text style={styles.momentLabel}>registrados nesta semana</Text></View></View><View style={styles.momentLine} /><View style={styles.momentItem}><Ionicons name="flame-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{thisWeek.length}</Text><Text style={styles.momentLabel}>atividades registradas</Text></View></View></>}</View>
 
     <View style={styles.gap} />
     <SectionTitle title="Seu acompanhamento" />

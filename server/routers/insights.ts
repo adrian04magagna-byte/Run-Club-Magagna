@@ -8,10 +8,11 @@ import {
   PERIOD_DAYS,
   addDays,
   currentStreak,
-  dailyBuckets,
   inRange,
   periodSeries,
+  startOfWeek,
   totals,
+  weekDays,
   type TrainingEntry,
 } from "../../shared/insights";
 import type { StravaActivitySummary } from "../../shared/strava";
@@ -55,8 +56,11 @@ export const insightsRouter = router({
       const { period, today, tzOffsetMinutes } = input;
       const days = period === "all" ? null : PERIOD_DAYS[period];
       const periodFrom = days ? addDays(today, -(days - 1)) : "0000-01-01";
-      // Pull twice the window so the previous period can be compared; seven days are always needed.
-      const fetchFrom = days ? addDays(today, -(2 * days - 1) - 1) : null;
+      // Pull twice the window so the previous period can be compared; this week and last week are always needed.
+      const weekFrom = startOfWeek(today);
+      const lastWeekFrom = addDays(weekFrom, -7);
+      const twoPeriodsFrom = days ? addDays(today, -(2 * days - 1) - 1) : null;
+      const fetchFrom = twoPeriodsFrom && twoPeriodsFrom > lastWeekFrom ? lastWeekFrom : twoPeriodsFrom;
 
       const clubRows = await db.select().from(activities).where(eq(activities.athleteId, ctx.user.id)).orderBy(desc(activities.completedAt));
       const importedStravaIds = new Set(clubRows.filter((row) => row.source === "strava" && row.externalActivityId).map((row) => row.externalActivityId));
@@ -102,9 +106,10 @@ export const insightsRouter = router({
         }
       }
 
-      const last7From = addDays(today, -6);
-      const last7 = inRange(entries, last7From, today);
-      const previous7 = inRange(entries, addDays(today, -13), addDays(today, -7));
+      // "This week" like Strava: Monday to Sunday, compared with last week up to the same weekday.
+      const weekTo = addDays(weekFrom, 6);
+      const thisWeek = inRange(entries, weekFrom, today);
+      const lastWeekSoFar = inRange(entries, lastWeekFrom, addDays(today, -7));
       const periodEntries = inRange(entries, periodFrom, today);
       const previousPeriod = days ? inRange(entries, addDays(periodFrom, -days), addDays(periodFrom, -1)) : null;
 
@@ -120,15 +125,15 @@ export const insightsRouter = router({
           previousDistanceMeters: previousPeriod ? totals(previousPeriod).distanceMeters : null,
         },
         series: periodSeries(periodEntries, period, today),
-        last7: {
-          from: last7From,
-          to: today,
-          days: dailyBuckets(last7, today, 7),
-          ...totals(last7),
-          previousDistanceMeters: totals(previous7).distanceMeters,
+        week: {
+          from: weekFrom,
+          to: weekTo,
+          days: weekDays(thisWeek, weekFrom),
+          ...totals(thisWeek),
+          previousDistanceMeters: totals(lastWeekSoFar).distanceMeters,
           streakDays: currentStreak(entries, today),
         },
-        recent: [...last7]
+        recent: [...thisWeek]
           .sort((a, b) => (b.startLocal ?? b.date).localeCompare(a.startLocal ?? a.date))
           .slice(0, RECENT_LIMIT),
       };

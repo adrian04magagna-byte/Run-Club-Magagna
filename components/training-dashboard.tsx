@@ -18,7 +18,7 @@ import {
   formatPace,
 } from "@/components/dashboard-ui";
 import { C, SectionTitle } from "@/components/run-ui";
-import { useInsights } from "@/hooks/use-insights";
+import { localToday, useInsights } from "@/hooks/use-insights";
 import { useIsDesktop } from "@/hooks/use-layout";
 import { paceSecondsPerKm } from "@/shared/insights";
 
@@ -50,9 +50,9 @@ export function TrainingDashboard({ enabled = true, showRecent = true, aside, ti
     );
   }
 
-  const { period, last7 } = data;
-  const weekDelta = delta(last7.distanceMeters, last7.previousDistanceMeters);
-  const hasAnyRun = period.runs > 0 || last7.runs > 0;
+  const { period, week } = data;
+  const weekDelta = delta(week.distanceMeters, week.previousDistanceMeters);
+  const hasAnyRun = period.runs > 0 || week.runs > 0;
 
   const banners = (
     <>
@@ -103,31 +103,31 @@ export function TrainingDashboard({ enabled = true, showRecent = true, aside, ti
       <View style={styles.weekGlow} />
       <View style={styles.weekHeader}>
         <View>
-          <Text style={styles.weekEyebrow}>FOCO · ÚLTIMOS 7 DIAS</Text>
+          <Text style={styles.weekEyebrow}>FOCO · ESTA SEMANA · {shortDay(week.from)} – {shortDay(week.to)}</Text>
           <View style={styles.weekValueRow}>
-            <Text style={styles.weekValue}>{formatKm(last7.distanceMeters)}</Text>
+            <Text style={styles.weekValue}>{formatKm(week.distanceMeters)}</Text>
             <Text style={styles.weekUnit}>km</Text>
             <DeltaChip value={weekDelta} inverse />
           </View>
           <Text style={styles.weekCompare}>
-            {weekDelta === null ? "Sem semana anterior para comparar" : `vs. ${formatKm(last7.previousDistanceMeters)} km na semana anterior`}
+            {weekDelta === null ? "Sem corridas na semana passada até hoje" : `vs. ${formatKm(week.previousDistanceMeters)} km na semana passada até este dia`}
           </Text>
         </View>
         <View style={styles.streak}>
           <Ionicons name="flame" size={16} color={C.ink} />
-          <Text style={styles.streakValue}>{last7.streakDays}</Text>
-          <Text style={styles.streakLabel}>{last7.streakDays === 1 ? "dia" : "dias"}</Text>
+          <Text style={styles.streakValue}>{week.streakDays}</Text>
+          <Text style={styles.streakLabel}>{week.streakDays === 1 ? "dia" : "dias"}</Text>
         </View>
       </View>
-      <BarChart buckets={last7.days} dark height={96} />
+      <BarChart buckets={week.days} dark height={96} highlight={week.days.findIndex((day) => day.from === localToday())} />
       <View style={styles.weekMetrics}>
-        <WeekMetric label="corridas" value={String(last7.runs)} />
+        <WeekMetric label="corridas" value={String(week.runs)} />
         <View style={styles.weekDivider} />
-        <WeekMetric label="tempo" value={formatDuration(last7.movingSeconds)} />
+        <WeekMetric label="tempo" value={formatDuration(week.movingSeconds)} />
         <View style={styles.weekDivider} />
-        <WeekMetric label="ritmo /km" value={formatPace(last7.averagePaceSecondsPerKm)} />
+        <WeekMetric label="ritmo /km" value={formatPace(week.averagePaceSecondsPerKm)} />
         <View style={styles.weekDivider} />
-        <WeekMetric label="dias ativos" value={`${last7.activeDays}/7`} />
+        <WeekMetric label="dias ativos" value={`${week.activeDays}/7`} />
       </View>
     </View>
   );
@@ -196,6 +196,11 @@ export function TrainingDashboard({ enabled = true, showRecent = true, aside, ti
       {footnote}
     </View>
   );
+}
+
+/** "2026-11-02" → "02/11". */
+function shortDay(date: string) {
+  return `${date.slice(8, 10)}/${date.slice(5, 7)}`;
 }
 
 function WeekMetric({ label, value }: { label: string; value: string }) {

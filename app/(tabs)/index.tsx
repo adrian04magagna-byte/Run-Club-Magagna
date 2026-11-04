@@ -6,7 +6,9 @@ import { formatDay, formatKm, formatPace } from "@/components/dashboard-ui";
 import { C, Pill, PrimaryButton, Screen, SectionTitle } from "@/components/run-ui";
 import { TrainingDashboard } from "@/components/training-dashboard";
 import { useAuth } from "@/hooks/use-auth";
+import { localToday } from "@/hooks/use-insights";
 import { trpc } from "@/lib/trpc";
+import { addDays, startOfWeek } from "@/shared/insights";
 
 function greeting() {
   const hour = new Date().getHours();
@@ -43,10 +45,10 @@ function AthleteToday() {
   const router = useRouter();
   const assignments = trpc.club.myAssignments.useQuery();
   const upcoming = assignments.data?.find((assignment) => assignment.status === "assigned");
-  const weekStart = new Date();
-  weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(weekStart.getDate() - 6);
-  const weekAssignments = (assignments.data ?? []).filter((assignment) => new Date(`${assignment.scheduledDate}T00:00:00`) >= weekStart);
+  // The plan of this calendar week, Monday to Sunday.
+  const weekFrom = startOfWeek(localToday());
+  const weekTo = addDays(weekFrom, 6);
+  const weekAssignments = (assignments.data ?? []).filter((assignment) => assignment.scheduledDate >= weekFrom && assignment.scheduledDate <= weekTo);
   const weekCompleted = weekAssignments.filter((assignment) => assignment.status === "completed").length;
   const stepMinutes = (upcoming?.steps ?? []).reduce((total, step) => total + (step.durationSeconds ?? 0), 0) / 60;
   const stepDistance = (upcoming?.steps ?? []).reduce((total, step) => total + (step.distanceMeters ?? 0), 0);
