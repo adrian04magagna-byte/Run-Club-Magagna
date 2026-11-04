@@ -3,8 +3,8 @@ import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { DesktopTopBar } from "@/components/desktop-top-bar";
 import { C } from "@/components/run-ui";
+import { TopBar } from "@/components/top-bar";
 import { HapticTab } from "@/components/haptic-tab";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsDesktop } from "@/hooks/use-layout";
@@ -28,13 +28,15 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      tabBar={desktop ? (props) => <DesktopTopBar {...props} /> : undefined}
+      tabBar={desktop ? (props) => <TopBar tabs={props} /> : undefined}
       screenOptions={{
-        headerShown: false,
+        // Phones keep the tabs at the bottom and show the same dark bar as the screen header.
+        headerShown: !desktop,
+        header: () => <TopBar />,
         tabBarPosition: desktop ? "top" : "bottom",
         tabBarButton: HapticTab,
-        tabBarActiveTintColor: C.ink,
-        tabBarInactiveTintColor: C.muted,
+        tabBarActiveTintColor: C.lime,
+        tabBarInactiveTintColor: "#8A969E",
         tabBarStyle: [styles.tabBar, { height: tabBarHeight, paddingBottom: bottomPadding }],
         tabBarLabelStyle: styles.tabLabel,
       }}
@@ -50,6 +52,6 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: C.paper },
-  tabBar: { paddingTop: 9, backgroundColor: C.paper, borderTopColor: C.line, borderTopWidth: 1, elevation: 0 },
+  tabBar: { paddingTop: 9, backgroundColor: C.ink, borderTopColor: "#1C3B47", borderTopWidth: 1, elevation: 0 },
   tabLabel: { fontSize: 10, fontWeight: "800", marginTop: 1 },
 });

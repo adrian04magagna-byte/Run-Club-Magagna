@@ -27,7 +27,7 @@ const PERIOD_NAMES = { "7d": "nos últimos 7 dias", "30d": "nos últimos 30 dias
 /**
  * The member's own running dashboard: period stats floating at the top, then the last seven days
  * in focus, then the runs of the week. Data comes from club logs plus the connected Strava account.
- * On phones `aside` (the screen's own cards) comes first and everything stacks; on desktop the week
+ * On phones `aside` (the screen's own cards) and the week focus come first, then the rest stacks; on desktop the week
  * focus and its runs take the left column, while `aside` and the period numbers take the right.
  */
 export function TrainingDashboard({ enabled = true, showRecent = true, aside, title }: { enabled?: boolean; showRecent?: boolean; aside?: ReactNode; title: string }) {
@@ -78,7 +78,7 @@ export function TrainingDashboard({ enabled = true, showRecent = true, aside, ti
         {insights.isFetching ? " · atualizando…" : ""}
       </Text>
       <FloatingStats
-        grid={desktop}
+        grid
         stats={[
           { icon: "map-outline", label: "distância", value: formatKm(period.distanceMeters), unit: "km", delta: delta(period.distanceMeters, period.previousDistanceMeters) },
           { icon: "speedometer-outline", label: "ritmo médio", value: formatPace(period.averagePaceSecondsPerKm), unit: "/km", accent: C.sky },
@@ -92,20 +92,20 @@ export function TrainingDashboard({ enabled = true, showRecent = true, aside, ti
       {insights.period !== "7d" ? (
         <View style={styles.periodChart}>
           <Text style={styles.periodChartTitle}>Volume {insights.period === "90d" ? "por semana" : insights.period === "all" ? "por mês" : "por dia"}</Text>
-          <BarChart buckets={data.series} height={desktop ? 72 : 88} />
+          <BarChart buckets={data.series} height={72} />
         </View>
       ) : null}
     </>
   );
 
   const weekCard = (
-    <View style={[styles.weekCard, desktop && styles.weekCardDesktop]}>
+    <View style={styles.weekCard}>
       <View style={styles.weekGlow} />
       <View style={styles.weekHeader}>
         <View>
           <Text style={styles.weekEyebrow}>FOCO · ÚLTIMOS 7 DIAS</Text>
           <View style={styles.weekValueRow}>
-            <Text style={[styles.weekValue, desktop && styles.weekValueDesktop]}>{formatKm(last7.distanceMeters)}</Text>
+            <Text style={styles.weekValue}>{formatKm(last7.distanceMeters)}</Text>
             <Text style={styles.weekUnit}>km</Text>
             <DeltaChip value={weekDelta} inverse />
           </View>
@@ -119,7 +119,7 @@ export function TrainingDashboard({ enabled = true, showRecent = true, aside, ti
           <Text style={styles.streakLabel}>{last7.streakDays === 1 ? "dia" : "dias"}</Text>
         </View>
       </View>
-      <BarChart buckets={last7.days} dark height={desktop ? 96 : 112} />
+      <BarChart buckets={last7.days} dark height={96} />
       <View style={styles.weekMetrics}>
         <WeekMetric label="corridas" value={String(last7.runs)} />
         <View style={styles.weekDivider} />
@@ -186,11 +186,12 @@ export function TrainingDashboard({ enabled = true, showRecent = true, aside, ti
   return (
     <View>
       {aside}
-      {aside ? <View style={styles.gap} /> : null}
+      {aside ? <View style={styles.gapPhone} /> : null}
+      {weekCard}
+      <View style={styles.gap} />
       <SectionTitle title={title} />
       {banners}
       {periodBlock}
-      {weekCard}
       {recentBlock}
       {footnote}
     </View>
@@ -212,6 +213,7 @@ const styles = StyleSheet.create({
   skeletonRow: { flexDirection: "row", gap: 10 },
   gap: { height: 28 },
   gapDesktop: { height: 20 },
+  gapPhone: { height: 14 },
   list: { gap: 8 },
   split: { flexDirection: "row", alignItems: "flex-start", gap: 20 },
   main: { flex: 1.35, minWidth: 0 },
@@ -228,14 +230,12 @@ const styles = StyleSheet.create({
   periodChart: { padding: 16, marginBottom: 16, borderRadius: 22, backgroundColor: C.white, borderWidth: 1, borderColor: "#ECEDE6" },
   periodChartTitle: { color: C.ink, fontSize: 13, fontWeight: "900", marginBottom: 6 },
 
-  weekCard: { overflow: "hidden", padding: 20, borderRadius: 28, backgroundColor: C.ink, boxShadow: "0px 16px 36px rgba(11, 23, 32, 0.22)" },
+  weekCard: { overflow: "hidden", padding: 18, borderRadius: 24, backgroundColor: C.ink, boxShadow: "0px 16px 36px rgba(11, 23, 32, 0.22)" },
   weekGlow: { position: "absolute", width: 240, height: 240, borderRadius: 120, right: -90, top: -110, backgroundColor: "#1C3B47" },
   weekHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
   weekEyebrow: { color: C.lime, fontSize: 10, fontWeight: "900", letterSpacing: 1.3, marginBottom: 6 },
   weekValueRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  weekCardDesktop: { padding: 18, borderRadius: 24 },
-  weekValue: { color: C.white, fontSize: 44, lineHeight: 48, fontWeight: "900", letterSpacing: -1.8 },
-  weekValueDesktop: { fontSize: 34, lineHeight: 38, letterSpacing: -1.2 },
+  weekValue: { color: C.white, fontSize: 34, lineHeight: 38, fontWeight: "900", letterSpacing: -1.2 },
   weekUnit: { color: "rgba(255,255,255,0.6)", fontSize: 16, fontWeight: "800", marginTop: 12, marginRight: 4 },
   weekCompare: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontWeight: "600", marginTop: 2 },
   streak: { alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18, backgroundColor: C.lime },

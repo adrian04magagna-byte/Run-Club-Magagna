@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/js-tabs";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { formatKm } from "@/components/dashboard-ui";
 import { ProfileAvatar } from "@/components/profile-avatar";
@@ -10,10 +12,14 @@ import { useInsights } from "@/hooks/use-insights";
 import { trpc } from "@/lib/trpc";
 
 /**
- * Desktop navigation: brand, the tabs as pills and a seven-day summary. It shares the dashboard's
- * insights query (same period and day), so it adds no extra Strava reads.
+ * The dark app bar: brand, a seven-day summary and the profile photo. On desktop it is the tab bar
+ * (pass the tab props and the tabs show as pills); on phones it is the screen header and the tabs stay
+ * at the bottom. It shares the dashboard's insights query (same period and day), so it adds no Strava reads.
  */
-export function DesktopTopBar({ state, descriptors, navigation }: BottomTabBarProps) {
+export function TopBar({ tabs }: { tabs?: BottomTabBarProps }) {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { user } = useAuth();
   const profile = trpc.account.profile.useQuery(undefined, { enabled: Boolean(user) });
   const insights = useInsights(Boolean(user));
@@ -21,36 +27,14 @@ export function DesktopTopBar({ state, descriptors, navigation }: BottomTabBarPr
   const name = profile.data?.name || user?.name || "";
 
   return (
-    <View style={styles.bar}>
-      <View style={styles.inner}>
-        <Pressable onPress={() => navigation.navigate("index")} style={styles.brand} accessibilityRole="link" accessibilityLabel="Run Club Magagna, início">
-          <AppMark inverse size={32} />
-          <Text style={styles.brandText}>Run Club <Text style={styles.brandAccent}>Magagna</Text></Text>
+    <View style={[styles.bar, { paddingTop: insets.top }]}>
+      <View style={[styles.inner, !tabs && styles.innerPhone]}>
+        <Pressable onPress={() => router.navigate("/(tabs)")} style={styles.brand} accessibilityRole="link" accessibilityLabel="Run Club Magagna, início">
+          <AppMark inverse size={tabs ? 32 : 30} />
+          {tabs || width >= 430 ? <Text style={styles.brandText}>Run Club <Text style={styles.brandAccent}>Magagna</Text></Text> : null}
         </Pressable>
 
-        <View style={styles.nav}>
-          {state.routes.map((route, index) => {
-            const { options } = descriptors[route.key];
-            const focused = state.index === index;
-            const color = focused ? C.ink : "#B9C2C9";
-            const onPress = () => {
-              const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-              if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
-            };
-            return (
-              <Pressable
-                key={route.key}
-                onPress={onPress}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: focused }}
-                style={({ hovered }) => [styles.tab, focused ? styles.tabActive : hovered && styles.tabHover]}
-              >
-                {options.tabBarIcon?.({ focused, color, size: 16 })}
-                <Text style={[styles.tabLabel, { color }]}>{options.title ?? route.name}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {tabs ? <TabPills {...tabs} /> : null}
 
         <View style={styles.right}>
           {last7 ? (
@@ -65,7 +49,7 @@ export function DesktopTopBar({ state, descriptors, navigation }: BottomTabBarPr
               </View>
             </>
           ) : null}
-          <Pressable onPress={() => navigation.navigate("profile")} accessibilityLabel="Abrir perfil" style={({ pressed }) => pressed && styles.pressed}>
+          <Pressable onPress={() => router.navigate("/(tabs)/profile")} accessibilityLabel="Abrir perfil" style={({ pressed }) => pressed && styles.pressed}>
             <ProfileAvatar uri={profile.data?.avatarUrl} name={name} size={34} />
           </Pressable>
         </View>
@@ -74,10 +58,39 @@ export function DesktopTopBar({ state, descriptors, navigation }: BottomTabBarPr
   );
 }
 
+function TabPills({ state, descriptors, navigation }: BottomTabBarProps) {
+  return (
+    <View style={styles.nav}>
+      {state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        const focused = state.index === index;
+        const color = focused ? C.ink : "#B9C2C9";
+        const onPress = () => {
+          const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
+          if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
+        };
+        return (
+          <Pressable
+            key={route.key}
+            onPress={onPress}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: focused }}
+            style={({ hovered }) => [styles.tab, focused ? styles.tabActive : hovered && styles.tabHover]}
+          >
+            {options.tabBarIcon?.({ focused, color, size: 16 })}
+            <Text style={[styles.tabLabel, { color }]}>{options.title ?? route.name}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   pressed: { opacity: 0.75 },
   bar: { backgroundColor: C.ink, borderBottomWidth: 1, borderBottomColor: "#1C3B47" },
   inner: { width: "100%", maxWidth: 1160, alignSelf: "center", height: 64, paddingHorizontal: 24, flexDirection: "row", alignItems: "center", gap: 28 },
+  innerPhone: { height: 58, paddingHorizontal: 16, gap: 10 },
   brand: { flexDirection: "row", alignItems: "center", gap: 10 },
   brandText: { color: C.white, fontSize: 15, fontWeight: "900", letterSpacing: -0.3 },
   brandAccent: { color: C.lime },

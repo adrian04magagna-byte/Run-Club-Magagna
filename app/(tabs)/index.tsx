@@ -3,11 +3,9 @@ import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { formatDay, formatKm, formatPace } from "@/components/dashboard-ui";
-import { ProfileAvatar } from "@/components/profile-avatar";
-import { AppMark, C, Pill, PrimaryButton, Screen, SectionTitle } from "@/components/run-ui";
+import { C, Pill, PrimaryButton, Screen, SectionTitle } from "@/components/run-ui";
 import { TrainingDashboard } from "@/components/training-dashboard";
 import { useAuth } from "@/hooks/use-auth";
-import { useIsDesktop } from "@/hooks/use-layout";
 import { trpc } from "@/lib/trpc";
 
 function greeting() {
@@ -15,34 +13,18 @@ function greeting() {
   return hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
 }
 
+/** Date and greeting; the photo and brand live in the dark top bar. */
 function Header() {
-  const router = useRouter();
-  const desktop = useIsDesktop();
   const { user } = useAuth();
   const profile = trpc.account.profile.useQuery(undefined, { enabled: Boolean(user) });
   const name = profile.data?.name || user?.name || "";
   const firstName = name.split(" ")[0] || "corredor";
   const rawDate = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   const dateLabel = rawDate.charAt(0).toUpperCase() + rawDate.slice(1);
-  // On desktop the top bar already shows the photo and the brand.
-  if (desktop) {
-    return (
-      <View style={styles.headerDesktop}>
-        <Text style={styles.headerDate}>{dateLabel}</Text>
-        <Text style={styles.headerHello} numberOfLines={1}>{greeting()}, {firstName}</Text>
-      </View>
-    );
-  }
   return (
     <View style={styles.header}>
-      <Pressable onPress={() => router.push("/(tabs)/profile")} style={({ pressed }) => [styles.headerUser, pressed && styles.pressed]}>
-        <ProfileAvatar uri={profile.data?.avatarUrl} name={name} size={46} />
-        <View style={styles.headerCopy}>
-          <Text style={styles.headerDate}>{dateLabel}</Text>
-          <Text style={styles.headerHello} numberOfLines={1}>{greeting()}, {firstName}</Text>
-        </View>
-      </Pressable>
-      <AppMark size={40} />
+      <Text style={styles.headerDate}>{dateLabel}</Text>
+      <Text style={styles.headerHello} numberOfLines={1}>{greeting()}, {firstName}</Text>
     </View>
   );
 }
@@ -182,17 +164,14 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
   gap: { height: 28 },
 
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 6, marginBottom: 22 },
-  headerDesktop: { marginBottom: 18 },
-  headerUser: { flexDirection: "row", alignItems: "center", gap: 12, flexShrink: 1 },
-  headerCopy: { flexShrink: 1 },
+  header: { paddingTop: 4, marginBottom: 18 },
   headerDate: { color: C.muted, fontSize: 12, fontWeight: "700" },
   headerHello: { color: C.ink, fontSize: 22, lineHeight: 27, fontWeight: "900", letterSpacing: -0.6 },
 
-  nextCard: { padding: 20, borderRadius: 28, backgroundColor: C.navy, boxShadow: "0px 16px 36px rgba(11, 23, 32, 0.2)" },
+  nextCard: { padding: 18, borderRadius: 24, backgroundColor: C.navy, boxShadow: "0px 16px 36px rgba(11, 23, 32, 0.2)" },
   nextTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   nextDate: { color: "rgba(255,255,255,0.65)", fontSize: 11, fontWeight: "800" },
-  nextTitle: { color: C.white, fontSize: 26, lineHeight: 30, fontWeight: "900", letterSpacing: -0.8, marginTop: 18 },
+  nextTitle: { color: C.white, fontSize: 22, lineHeight: 27, fontWeight: "900", letterSpacing: -0.6, marginTop: 14 },
   nextText: { color: "rgba(255,255,255,0.7)", fontSize: 13, lineHeight: 19, fontWeight: "600", marginTop: 6 },
   nextMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 16 },
   nextMetric: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.08)" },
@@ -203,7 +182,7 @@ const styles = StyleSheet.create({
   planProgressValue: { color: C.white, fontSize: 12, fontWeight: "900" },
   track: { height: 8, borderRadius: 8, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.1)" },
   trackFill: { height: "100%", borderRadius: 8, backgroundColor: C.lime },
-  nextButton: { marginTop: 18 },
+  nextButton: { marginTop: 16, minHeight: 48 },
 
   coachGrid: { flexDirection: "row", gap: 8, marginBottom: 12 },
   coachTile: { flex: 1, gap: 4, padding: 12, borderRadius: 18, backgroundColor: C.white, boxShadow: "0px 8px 20px rgba(11, 23, 32, 0.07)" },

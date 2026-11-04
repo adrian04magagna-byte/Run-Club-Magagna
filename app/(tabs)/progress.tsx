@@ -58,7 +58,7 @@ export default function ProgressScreen() {
           <View>
             <Text style={styles.heroEyebrow}>DISTÂNCIA NO PERÍODO</Text>
             <View style={styles.heroValueRow}>
-              <Text style={[styles.heroValue, desktop && styles.heroValueDesktop]}>{formatKm(period.distanceMeters)}</Text>
+              <Text style={styles.heroValue}>{formatKm(period.distanceMeters)}</Text>
               <Text style={styles.heroUnit}>km</Text>
               <DeltaChip value={delta(period.distanceMeters, period.previousDistanceMeters)} inverse />
             </View>
@@ -175,17 +175,16 @@ const styles = StyleSheet.create({
   selectorDesktop: { maxWidth: 440 },
   split: { flexDirection: "row", alignItems: "flex-start", gap: 20 },
   side: { flex: 1, minWidth: 0, marginTop: 16 },
-  heroDesktop: { flex: 1.35, minWidth: 0, padding: 18, borderRadius: 24 },
-  heroValueDesktop: { fontSize: 34, lineHeight: 38, letterSpacing: -1.2 },
+  heroDesktop: { flex: 1.35, minWidth: 0 },
   header: { paddingTop: 6, marginBottom: 18 },
   eyebrow: { color: C.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.5, marginBottom: 5 },
   title: { color: C.ink, fontSize: 31, fontWeight: "900", letterSpacing: -1.1 },
 
-  hero: { marginTop: 16, padding: 20, borderRadius: 28, backgroundColor: C.ink, boxShadow: "0px 16px 36px rgba(11, 23, 32, 0.22)" },
+  hero: { marginTop: 16, padding: 18, borderRadius: 24, backgroundColor: C.ink, boxShadow: "0px 16px 36px rgba(11, 23, 32, 0.22)" },
   heroTop: { marginBottom: 14 },
   heroEyebrow: { color: C.lime, fontSize: 10, fontWeight: "900", letterSpacing: 1.3, marginBottom: 6 },
   heroValueRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  heroValue: { color: C.white, fontSize: 44, lineHeight: 48, fontWeight: "900", letterSpacing: -1.8 },
+  heroValue: { color: C.white, fontSize: 34, lineHeight: 38, fontWeight: "900", letterSpacing: -1.2 },
   heroUnit: { color: "rgba(255,255,255,0.6)", fontSize: 16, fontWeight: "800", marginTop: 12, marginRight: 4 },
   heroRange: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontWeight: "600", marginTop: 2 },
   heroMetrics: { flexDirection: "row", marginTop: 18, paddingTop: 16, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.1)" },
