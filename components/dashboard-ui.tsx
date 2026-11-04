@@ -127,22 +127,25 @@ export function DeltaChip({ value, inverse = false }: { value: number | null; in
 export type FloatingStat = { icon: IconName; label: string; value: string; unit?: string; delta?: number | null; accent?: string };
 
 /** Horizontally scrolling stat tiles that sit above the page with a soft shadow. */
-export function FloatingStats({ stats }: { stats: FloatingStat[] }) {
+/** A swipeable row on phones; `grid` lays the same cards out in two columns for wide screens. */
+export function FloatingStats({ stats, grid = false }: { stats: FloatingStat[]; grid?: boolean }) {
+  const cards = stats.map((stat) => (
+    <View key={stat.label} style={grid ? styles.gridCard : styles.floatingCard}>
+      <View style={[styles.floatingTop, grid && styles.gridTop]}>
+        <View style={[styles.floatingIcon, grid && styles.gridIcon, { backgroundColor: stat.accent ?? C.lime }]}><Ionicons name={stat.icon} size={grid ? 14 : 16} color={C.ink} /></View>
+        <DeltaChip value={stat.delta ?? null} />
+      </View>
+      <Text style={[styles.floatingValue, grid && styles.gridValue]} numberOfLines={1}>
+        {stat.value}
+        {stat.unit ? <Text style={styles.floatingUnit}> {stat.unit}</Text> : null}
+      </Text>
+      <Text style={styles.floatingLabel} numberOfLines={1}>{stat.label}</Text>
+    </View>
+  ));
+  if (grid) return <View style={styles.grid}>{cards}</View>;
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.floatingRow} style={styles.floatingScroll}>
-      {stats.map((stat) => (
-        <View key={stat.label} style={styles.floatingCard}>
-          <View style={styles.floatingTop}>
-            <View style={[styles.floatingIcon, { backgroundColor: stat.accent ?? C.lime }]}><Ionicons name={stat.icon} size={16} color={C.ink} /></View>
-            <DeltaChip value={stat.delta ?? null} />
-          </View>
-          <Text style={styles.floatingValue} numberOfLines={1}>
-            {stat.value}
-            {stat.unit ? <Text style={styles.floatingUnit}> {stat.unit}</Text> : null}
-          </Text>
-          <Text style={styles.floatingLabel} numberOfLines={1}>{stat.label}</Text>
-        </View>
-      ))}
+      {cards}
     </ScrollView>
   );
 }
@@ -310,6 +313,11 @@ const styles = StyleSheet.create({
   floatingValue: { color: C.ink, fontSize: 24, lineHeight: 28, fontWeight: "900", letterSpacing: -0.8 },
   floatingUnit: { color: C.muted, fontSize: 12, fontWeight: "800", letterSpacing: 0 },
   floatingLabel: { color: C.muted, fontSize: 11, fontWeight: "700" },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 14 },
+  gridCard: { flexBasis: "45%", flexGrow: 1, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, backgroundColor: C.white, borderWidth: 1, borderColor: "#ECEDE6", gap: 1 },
+  gridTop: { marginBottom: 8 },
+  gridIcon: { width: 26, height: 26, borderRadius: 9 },
+  gridValue: { fontSize: 20, lineHeight: 24 },
 
   chartHint: { minHeight: 20, marginBottom: 10 },
   chartHintText: { color: C.muted, fontSize: 12, fontWeight: "700" },

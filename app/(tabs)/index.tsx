@@ -7,6 +7,7 @@ import { ProfileAvatar } from "@/components/profile-avatar";
 import { AppMark, C, Pill, PrimaryButton, Screen, SectionTitle } from "@/components/run-ui";
 import { TrainingDashboard } from "@/components/training-dashboard";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsDesktop } from "@/hooks/use-layout";
 import { trpc } from "@/lib/trpc";
 
 function greeting() {
@@ -16,12 +17,22 @@ function greeting() {
 
 function Header() {
   const router = useRouter();
+  const desktop = useIsDesktop();
   const { user } = useAuth();
   const profile = trpc.account.profile.useQuery(undefined, { enabled: Boolean(user) });
   const name = profile.data?.name || user?.name || "";
   const firstName = name.split(" ")[0] || "corredor";
   const rawDate = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
   const dateLabel = rawDate.charAt(0).toUpperCase() + rawDate.slice(1);
+  // On desktop the top bar already shows the photo and the brand.
+  if (desktop) {
+    return (
+      <View style={styles.headerDesktop}>
+        <Text style={styles.headerDate}>{dateLabel}</Text>
+        <Text style={styles.headerHello} numberOfLines={1}>{greeting()}, {firstName}</Text>
+      </View>
+    );
+  }
   return (
     <View style={styles.header}>
       <Pressable onPress={() => router.push("/(tabs)/profile")} style={({ pressed }) => [styles.headerUser, pressed && styles.pressed]}>
@@ -39,7 +50,7 @@ function Header() {
 export default function TodayScreen() {
   const { user } = useAuth();
   return (
-    <Screen scroll>
+    <Screen scroll wide>
       <Header />
       {user?.role === "admin" ? <CoachToday /> : <AthleteToday />}
     </Screen>
@@ -59,7 +70,7 @@ function AthleteToday() {
   const stepDistance = (upcoming?.steps ?? []).reduce((total, step) => total + (step.distanceMeters ?? 0), 0);
   const pace = upcoming?.steps.find((step) => step.targetPaceSecondsPerKm)?.targetPaceSecondsPerKm ?? null;
 
-  return (
+  const nextCard = (
     <>
       <View style={styles.nextCard}>
         <View style={styles.nextTop}>
@@ -87,12 +98,10 @@ function AthleteToday() {
         ) : null}
         <PrimaryButton label={upcoming ? "Abrir meu treino" : "Ver meu clube"} icon="arrow-forward" onPress={() => router.push("/(tabs)/club")} style={styles.nextButton} />
       </View>
-
-      <View style={styles.gap} />
-      <SectionTitle title="Seu painel" />
-      <TrainingDashboard />
     </>
   );
+
+  return <TrainingDashboard title="Seu painel" aside={nextCard} />;
 }
 
 function NextMetric({ icon, value }: { icon: "time-outline" | "map-outline" | "speedometer-outline" | "list-outline"; value: string }) {
@@ -117,7 +126,7 @@ function CoachToday() {
       ? { icon: "chatbubble-ellipses" as const, title: "Dar retorno aos alunos", text: `${toReview.length} ${toReview.length === 1 ? "treino aguarda" : "treinos aguardam"} sua avaliação.` }
       : { icon: "add-circle" as const, title: "Enviar o próximo treino", text: "Monte uma sessão por etapas e atribua a um aluno." };
 
-  return (
+  const classBlock = (
     <>
       <View style={styles.coachGrid}>
         <CoachTile icon="people" value={athletes.data?.length ?? 0} label="alunos" onPress={() => router.push("/(tabs)/club")} />
@@ -153,12 +162,10 @@ function CoachToday() {
           </View>
         </>
       ) : null}
-
-      <View style={styles.gap} />
-      <SectionTitle title="Seu treino" />
-      <TrainingDashboard />
     </>
   );
+
+  return <TrainingDashboard title="Seu treino" aside={classBlock} />;
 }
 
 function CoachTile({ icon, value, label, hot = false, onPress }: { icon: "people" | "hourglass" | "star" | "library"; value: number; label: string; hot?: boolean; onPress: () => void }) {
@@ -176,6 +183,7 @@ const styles = StyleSheet.create({
   gap: { height: 28 },
 
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 6, marginBottom: 22 },
+  headerDesktop: { marginBottom: 18 },
   headerUser: { flexDirection: "row", alignItems: "center", gap: 12, flexShrink: 1 },
   headerCopy: { flexShrink: 1 },
   headerDate: { color: C.muted, fontSize: 12, fontWeight: "700" },

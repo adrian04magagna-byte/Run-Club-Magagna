@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/components/dashboard-ui";
 import { C, SectionTitle } from "@/components/run-ui";
 import { useInsights } from "@/hooks/use-insights";
+import { useIsDesktop } from "@/hooks/use-layout";
 import { paceSecondsPerKm } from "@/shared/insights";
 
 const PERIOD_NAMES = { "7d": "nos últimos 7 dias", "30d": "nos últimos 30 dias", "90d": "nos últimos 90 dias", all: "em todo o histórico" } as const;
@@ -25,18 +27,25 @@ const PERIOD_NAMES = { "7d": "nos últimos 7 dias", "30d": "nos últimos 30 dias
 /**
  * The member's own running dashboard: period stats floating at the top, then the last seven days
  * in focus, then the runs of the week. Data comes from club logs plus the connected Strava account.
+ * On phones `aside` (the screen's own cards) comes first and everything stacks; on desktop the week
+ * focus and its runs take the left column, while `aside` and the period numbers take the right.
  */
-export function TrainingDashboard({ enabled = true, showRecent = true }: { enabled?: boolean; showRecent?: boolean }) {
+export function TrainingDashboard({ enabled = true, showRecent = true, aside, title }: { enabled?: boolean; showRecent?: boolean; aside?: ReactNode; title: string }) {
   const router = useRouter();
+  const desktop = useIsDesktop();
   const insights = useInsights(enabled);
   const data = insights.data;
 
   if (insights.isLoading || !data) {
     return (
-      <View style={styles.stack}>
-        <Skeleton height={44} radius={16} />
-        <View style={styles.skeletonRow}><Skeleton height={120} /><Skeleton height={120} /></View>
-        <Skeleton height={300} radius={28} />
+      <View>
+        {aside}
+        {aside ? <View style={styles.gap} /> : null}
+        <View style={styles.stack}>
+          <Skeleton height={44} radius={16} />
+          <View style={styles.skeletonRow}><Skeleton height={120} /><Skeleton height={120} /></View>
+          <Skeleton height={300} radius={28} />
+        </View>
       </View>
     );
   }
@@ -45,8 +54,8 @@ export function TrainingDashboard({ enabled = true, showRecent = true }: { enabl
   const weekDelta = delta(last7.distanceMeters, last7.previousDistanceMeters);
   const hasAnyRun = period.runs > 0 || last7.runs > 0;
 
-  return (
-    <View>
+  const banners = (
+    <>
       {!data.stravaConnected ? (
         <Pressable onPress={() => router.push("/strava")} style={({ pressed }) => [styles.stravaBanner, pressed && styles.pressed]}>
           <View style={styles.stravaDot}><Ionicons name="flash" size={15} color={C.white} /></View>
@@ -58,14 +67,18 @@ export function TrainingDashboard({ enabled = true, showRecent = true }: { enabl
         </Pressable>
       ) : null}
       {data.stravaError ? <Text style={styles.warning}>Strava indisponível agora: {data.stravaError}</Text> : null}
+    </>
+  );
 
+  const periodBlock = (
+    <>
       <PeriodSelector value={insights.period} onChange={insights.setPeriod} />
       <Text style={styles.periodCaption}>
         {period.runs ? `${period.runs} ${period.runs === 1 ? "corrida" : "corridas"} ${PERIOD_NAMES[insights.period]}` : `Sem corridas ${PERIOD_NAMES[insights.period]}`}
         {insights.isFetching ? " · atualizando…" : ""}
       </Text>
-
       <FloatingStats
+        grid={desktop}
         stats={[
           { icon: "map-outline", label: "distância", value: formatKm(period.distanceMeters), unit: "km", delta: delta(period.distanceMeters, period.previousDistanceMeters) },
           { icon: "speedometer-outline", label: "ritmo médio", value: formatPace(period.averagePaceSecondsPerKm), unit: "/km", accent: C.sky },
@@ -79,70 +92,107 @@ export function TrainingDashboard({ enabled = true, showRecent = true }: { enabl
       {insights.period !== "7d" ? (
         <View style={styles.periodChart}>
           <Text style={styles.periodChartTitle}>Volume {insights.period === "90d" ? "por semana" : insights.period === "all" ? "por mês" : "por dia"}</Text>
-          <BarChart buckets={data.series} height={88} />
+          <BarChart buckets={data.series} height={desktop ? 72 : 88} />
         </View>
       ) : null}
+    </>
+  );
 
-      <View style={styles.weekCard}>
-        <View style={styles.weekGlow} />
-        <View style={styles.weekHeader}>
-          <View>
-            <Text style={styles.weekEyebrow}>FOCO · ÚLTIMOS 7 DIAS</Text>
-            <View style={styles.weekValueRow}>
-              <Text style={styles.weekValue}>{formatKm(last7.distanceMeters)}</Text>
-              <Text style={styles.weekUnit}>km</Text>
-              <DeltaChip value={weekDelta} inverse />
-            </View>
-            <Text style={styles.weekCompare}>
-              {weekDelta === null ? "Sem semana anterior para comparar" : `vs. ${formatKm(last7.previousDistanceMeters)} km na semana anterior`}
-            </Text>
+  const weekCard = (
+    <View style={[styles.weekCard, desktop && styles.weekCardDesktop]}>
+      <View style={styles.weekGlow} />
+      <View style={styles.weekHeader}>
+        <View>
+          <Text style={styles.weekEyebrow}>FOCO · ÚLTIMOS 7 DIAS</Text>
+          <View style={styles.weekValueRow}>
+            <Text style={[styles.weekValue, desktop && styles.weekValueDesktop]}>{formatKm(last7.distanceMeters)}</Text>
+            <Text style={styles.weekUnit}>km</Text>
+            <DeltaChip value={weekDelta} inverse />
           </View>
-          <View style={styles.streak}>
-            <Ionicons name="flame" size={16} color={C.ink} />
-            <Text style={styles.streakValue}>{last7.streakDays}</Text>
-            <Text style={styles.streakLabel}>{last7.streakDays === 1 ? "dia" : "dias"}</Text>
-          </View>
+          <Text style={styles.weekCompare}>
+            {weekDelta === null ? "Sem semana anterior para comparar" : `vs. ${formatKm(last7.previousDistanceMeters)} km na semana anterior`}
+          </Text>
         </View>
-        <BarChart buckets={last7.days} dark height={112} />
-        <View style={styles.weekMetrics}>
-          <WeekMetric label="corridas" value={String(last7.runs)} />
-          <View style={styles.weekDivider} />
-          <WeekMetric label="tempo" value={formatDuration(last7.movingSeconds)} />
-          <View style={styles.weekDivider} />
-          <WeekMetric label="ritmo /km" value={formatPace(last7.averagePaceSecondsPerKm)} />
-          <View style={styles.weekDivider} />
-          <WeekMetric label="dias ativos" value={`${last7.activeDays}/7`} />
+        <View style={styles.streak}>
+          <Ionicons name="flame" size={16} color={C.ink} />
+          <Text style={styles.streakValue}>{last7.streakDays}</Text>
+          <Text style={styles.streakLabel}>{last7.streakDays === 1 ? "dia" : "dias"}</Text>
         </View>
       </View>
+      <BarChart buckets={last7.days} dark height={desktop ? 96 : 112} />
+      <View style={styles.weekMetrics}>
+        <WeekMetric label="corridas" value={String(last7.runs)} />
+        <View style={styles.weekDivider} />
+        <WeekMetric label="tempo" value={formatDuration(last7.movingSeconds)} />
+        <View style={styles.weekDivider} />
+        <WeekMetric label="ritmo /km" value={formatPace(last7.averagePaceSecondsPerKm)} />
+        <View style={styles.weekDivider} />
+        <WeekMetric label="dias ativos" value={`${last7.activeDays}/7`} />
+      </View>
+    </View>
+  );
 
-      {showRecent ? (
-        <>
-          <View style={styles.gap} />
-          <SectionTitle title="Treinos da semana" action={data.stravaConnected ? "Strava" : undefined} onPress={() => router.push("/strava")} />
-          {data.recent.length ? (
-            <View style={styles.list}>
-              {data.recent.map((entry) => (
-                <TrainingRow
-                  key={entry.id}
-                  title={entry.title}
-                  date={entry.date}
-                  source={entry.source}
-                  distanceMeters={entry.distanceMeters}
-                  movingSeconds={entry.movingSeconds}
-                  paceSecondsPerKm={paceSecondsPerKm(entry.distanceMeters, entry.movingSeconds)}
-                />
-              ))}
-            </View>
-          ) : (
-            <EmptyState
-              icon="footsteps-outline"
-              title={hasAnyRun ? "Nenhuma corrida nesta semana" : "Seu painel começa na primeira corrida"}
-              text={data.stravaConnected ? "Assim que você correr com o Strava, o treino aparece aqui sozinho." : "Registre um treino no clube ou conecte o Strava para preencher o painel."}
+  const recentBlock = showRecent ? (
+    <>
+      <View style={desktop ? styles.gapDesktop : styles.gap} />
+      <SectionTitle title="Treinos da semana" action={data.stravaConnected ? "Strava" : undefined} onPress={() => router.push("/strava")} />
+      {data.recent.length ? (
+        <View style={styles.list}>
+          {data.recent.map((entry) => (
+            <TrainingRow
+              key={entry.id}
+              title={entry.title}
+              date={entry.date}
+              source={entry.source}
+              distanceMeters={entry.distanceMeters}
+              movingSeconds={entry.movingSeconds}
+              paceSecondsPerKm={paceSecondsPerKm(entry.distanceMeters, entry.movingSeconds)}
             />
-          )}
-        </>
-      ) : null}
-      {data.truncated ? <Text style={styles.footnote}>Mostrando as 2.000 atividades mais recentes do Strava.</Text> : null}
+          ))}
+        </View>
+      ) : (
+        <EmptyState
+          icon="footsteps-outline"
+          title={hasAnyRun ? "Nenhuma corrida nesta semana" : "Seu painel começa na primeira corrida"}
+          text={data.stravaConnected ? "Assim que você correr com o Strava, o treino aparece aqui sozinho." : "Registre um treino no clube ou conecte o Strava para preencher o painel."}
+        />
+      )}
+    </>
+  ) : null;
+
+  const footnote = data.truncated ? <Text style={styles.footnote}>Mostrando as 2.000 atividades mais recentes do Strava.</Text> : null;
+
+  if (desktop) {
+    return (
+      <View>
+        {banners}
+        <View style={styles.split}>
+          <View style={styles.main}>
+            {weekCard}
+            {recentBlock}
+            {footnote}
+          </View>
+          <View style={styles.side}>
+            {aside}
+            {aside ? <View style={styles.gapDesktop} /> : null}
+            <SectionTitle title={title} />
+            {periodBlock}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      {aside}
+      {aside ? <View style={styles.gap} /> : null}
+      <SectionTitle title={title} />
+      {banners}
+      {periodBlock}
+      {weekCard}
+      {recentBlock}
+      {footnote}
     </View>
   );
 }
@@ -161,7 +211,11 @@ const styles = StyleSheet.create({
   stack: { gap: 14 },
   skeletonRow: { flexDirection: "row", gap: 10 },
   gap: { height: 28 },
+  gapDesktop: { height: 20 },
   list: { gap: 8 },
+  split: { flexDirection: "row", alignItems: "flex-start", gap: 20 },
+  main: { flex: 1.35, minWidth: 0 },
+  side: { flex: 1, minWidth: 0 },
 
   stravaBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, marginBottom: 16, borderRadius: 18, backgroundColor: "#FFF1EA", borderWidth: 1, borderColor: "#FFD6C2" },
   stravaDot: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: STRAVA_ORANGE },
@@ -179,7 +233,9 @@ const styles = StyleSheet.create({
   weekHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
   weekEyebrow: { color: C.lime, fontSize: 10, fontWeight: "900", letterSpacing: 1.3, marginBottom: 6 },
   weekValueRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  weekCardDesktop: { padding: 18, borderRadius: 24 },
   weekValue: { color: C.white, fontSize: 44, lineHeight: 48, fontWeight: "900", letterSpacing: -1.8 },
+  weekValueDesktop: { fontSize: 34, lineHeight: 38, letterSpacing: -1.2 },
   weekUnit: { color: "rgba(255,255,255,0.6)", fontSize: 16, fontWeight: "800", marginTop: 12, marginRight: 4 },
   weekCompare: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontWeight: "600", marginTop: 2 },
   streak: { alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18, backgroundColor: C.lime },

@@ -3,14 +3,17 @@ import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { DesktopTopBar } from "@/components/desktop-top-bar";
 import { C } from "@/components/run-ui";
 import { HapticTab } from "@/components/haptic-tab";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsDesktop } from "@/hooks/use-layout";
 import { trpc } from "@/lib/trpc";
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const { user, loading } = useAuth();
+  const desktop = useIsDesktop();
   const athleteStatus = trpc.account.status.useQuery(undefined, { enabled: Boolean(user) && user?.role !== "admin" });
   const bottomPadding = Platform.OS === "web" ? 11 : Math.max(insets.bottom, 8);
   const tabBarHeight = 61 + bottomPadding;
@@ -25,8 +28,10 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      tabBar={desktop ? (props) => <DesktopTopBar {...props} /> : undefined}
       screenOptions={{
         headerShown: false,
+        tabBarPosition: desktop ? "top" : "bottom",
         tabBarButton: HapticTab,
         tabBarActiveTintColor: C.ink,
         tabBarInactiveTintColor: C.muted,

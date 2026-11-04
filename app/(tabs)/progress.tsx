@@ -6,6 +6,7 @@ import { BarChart, DeltaChip, EmptyState, PeriodSelector, Skeleton, delta, forma
 import { C, PrimaryButton, ProgressRing, Screen, SectionTitle } from "@/components/run-ui";
 import { useAuth } from "@/hooks/use-auth";
 import { useInsights } from "@/hooks/use-insights";
+import { useIsDesktop } from "@/hooks/use-layout";
 import { trpc } from "@/lib/trpc";
 import { PERIOD_DAYS } from "@/shared/insights";
 
@@ -15,6 +16,7 @@ export default function ProgressScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const isCoach = user?.role === "admin";
+  const desktop = useIsDesktop();
   const insights = useInsights(Boolean(user));
   const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: Boolean(user) && !isCoach });
   const coachFeed = trpc.club.coachActivityFeed.useQuery(undefined, { enabled: isCoach });
@@ -46,16 +48,17 @@ export default function ProgressScreen() {
   const feedTotal = coachFeed.data?.length ?? 0;
 
   return (
-    <Screen scroll>
+    <Screen scroll wide>
       {header}
-      <PeriodSelector value={insights.period} onChange={insights.setPeriod} />
+      <View style={desktop && styles.selectorDesktop}><PeriodSelector value={insights.period} onChange={insights.setPeriod} /></View>
 
-      <View style={styles.hero}>
+      <View style={desktop && styles.split}>
+      <View style={[styles.hero, desktop && styles.heroDesktop]}>
         <View style={styles.heroTop}>
           <View>
             <Text style={styles.heroEyebrow}>DISTÂNCIA NO PERÍODO</Text>
             <View style={styles.heroValueRow}>
-              <Text style={styles.heroValue}>{formatKm(period.distanceMeters)}</Text>
+              <Text style={[styles.heroValue, desktop && styles.heroValueDesktop]}>{formatKm(period.distanceMeters)}</Text>
               <Text style={styles.heroUnit}>km</Text>
               <DeltaChip value={delta(period.distanceMeters, period.previousDistanceMeters)} inverse />
             </View>
@@ -65,7 +68,7 @@ export default function ProgressScreen() {
             </Text>
           </View>
         </View>
-        <BarChart buckets={data.series} dark height={130} />
+        <BarChart buckets={data.series} dark height={desktop ? 150 : 130} />
         <View style={styles.heroMetrics}>
           <HeroMetric value={String(period.runs)} label="corridas" />
           <HeroMetric value={formatDuration(period.movingSeconds)} label="em movimento" />
@@ -73,9 +76,10 @@ export default function ProgressScreen() {
         </View>
       </View>
 
+      <View style={desktop && styles.side}>
       {period.runs ? (
         <>
-          <View style={styles.gap} />
+          <View style={desktop ? styles.gapNone : styles.gap} />
           <SectionTitle title="Recordes do período" />
           <View style={styles.records}>
             <RecordCard icon="trophy-outline" label="Maior corrida" value={`${formatKm(period.longestMeters, 2)} km`} tone={C.sand} />
@@ -103,7 +107,7 @@ export default function ProgressScreen() {
         </>
       ) : (
         <>
-          <View style={styles.gap} />
+          <View style={desktop ? styles.gapNone : styles.gap} />
           <EmptyState
             icon="analytics-outline"
             title="Ainda não há corridas neste período"
@@ -112,6 +116,8 @@ export default function ProgressScreen() {
           />
         </>
       )}
+      </View>
+      </View>
 
       <View style={styles.gap} />
       {isCoach ? (
@@ -165,6 +171,12 @@ function RecordCard({ icon, label, value, tone }: { icon: RecordIcon; label: str
 const styles = StyleSheet.create({
   stack: { gap: 14 },
   gap: { height: 28 },
+  gapNone: { height: 0 },
+  selectorDesktop: { maxWidth: 440 },
+  split: { flexDirection: "row", alignItems: "flex-start", gap: 20 },
+  side: { flex: 1, minWidth: 0, marginTop: 16 },
+  heroDesktop: { flex: 1.35, minWidth: 0, padding: 18, borderRadius: 24 },
+  heroValueDesktop: { fontSize: 34, lineHeight: 38, letterSpacing: -1.2 },
   header: { paddingTop: 6, marginBottom: 18 },
   eyebrow: { color: C.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.5, marginBottom: 5 },
   title: { color: C.ink, fontSize: 31, fontWeight: "900", letterSpacing: -1.1 },

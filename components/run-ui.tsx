@@ -13,6 +13,8 @@ import {
 import { SafeAreaView, type Edge } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 
+import { useIsDesktop } from "@/hooks/use-layout";
+
 export const C = {
   ink: "#0B1720",
   inkSoft: "#263744",
@@ -32,10 +34,13 @@ export const C = {
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
-export function Screen({ children, scroll = false, edges = ["top", "left", "right"] }: { children: ReactNode; scroll?: boolean; edges?: Edge[] }) {
+/** `wide` lets multi-column screens use the full desktop width; others stay a readable single column. */
+export function Screen({ children, scroll = false, wide = false, edges = ["top", "left", "right"] }: { children: ReactNode; scroll?: boolean; wide?: boolean; edges?: Edge[] }) {
+  const desktop = useIsDesktop();
+  const column = [styles.column, desktop && (wide ? styles.columnWide : styles.columnDesktop)];
   const body = scroll
-    ? <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}><View style={styles.column}>{children}</View></ScrollView>
-    : <View style={[styles.column, styles.fill]}>{children}</View>;
+    ? <ScrollView contentContainerStyle={[styles.scrollContent, desktop && styles.scrollContentDesktop]} showsVerticalScrollIndicator={false}><View style={column}>{children}</View></ScrollView>
+    : <View style={[column, styles.fill]}>{children}</View>;
   return <SafeAreaView edges={edges} style={styles.screen}>{body}</SafeAreaView>;
 }
 
@@ -135,7 +140,10 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.paper },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 34 },
   // Keeps screens phone-shaped on wide browsers instead of stretching edge to edge.
+  scrollContentDesktop: { paddingHorizontal: 24, paddingTop: 22, paddingBottom: 48 },
   column: { width: "100%", maxWidth: 720, alignSelf: "center" },
+  columnDesktop: { maxWidth: 760 },
+  columnWide: { maxWidth: 1112 },
   fill: { flex: 1 },
   mark: { alignItems: "center", justifyContent: "center", overflow: "hidden" },
   markArc: { position: "absolute", left: 7, top: 9 },
