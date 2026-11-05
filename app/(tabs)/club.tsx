@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 import { DateChips, EmptyState, Segmented, SourceBadge, STRAVA_ORANGE, formatDay, formatKm, formatPace } from "@/components/dashboard-ui";
 import { AppHeader, C, CoachNote, Pill, Screen, SectionTitle } from "@/components/run-ui";
 import { CoachAiCard } from "@/components/coach-ai-card";
+import { WorkoutEditor, draftFromAi, emptyWorkoutDraft, workoutInputFrom, type WorkoutDraft } from "@/components/workout-editor";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
@@ -14,41 +15,11 @@ import type { AiWorkout } from "@/shared/coach-ai";
 type Effort = "easy" | "challenging" | "intense";
 type CoachTab = "team" | "review" | "create";
 type AthleteTab = "agenda" | "log" | "history";
-type WorkoutStepDraft = {
-  kind: "warmup" | "run" | "recovery" | "cooldown";
-  label: string;
-  durationMinutes: string;
-  distanceKm: string;
-  targetPace: string;
-  instruction: string;
-};
 type ActivityDraft = { date: string; distance: string; minutes: string; note: string; effort: Effort };
 
-const emptyStep = (): WorkoutStepDraft => ({ kind: "run", label: "Corrida leve", durationMinutes: "30", distanceKm: "", targetPace: "", instruction: "" });
-/** Turns an AI draft into the form's text fields, so the coach edits it like any workout. */
-function stepDraftsFrom(workout: AiWorkout): WorkoutStepDraft[] {
-  return workout.steps.map((step) => ({
-    kind: step.kind,
-    label: step.label,
-    durationMinutes: step.durationSeconds ? String(Math.round((step.durationSeconds / 60) * 10) / 10) : "",
-    distanceKm: step.distanceMeters ? String(Math.round(step.distanceMeters / 100) / 10) : "",
-    targetPace: step.targetPaceSecondsPerKm ? `${Math.floor(step.targetPaceSecondsPerKm / 60)}:${String(step.targetPaceSecondsPerKm % 60).padStart(2, "0")}` : "",
-    instruction: step.instruction ?? "",
-  }));
-}
 
 const emptyActivityDraft = (): ActivityDraft => ({ date: localDate(), distance: "", minutes: "", note: "", effort: "easy" });
-const stepKinds: { value: WorkoutStepDraft["kind"]; label: string }[] = [
-  { value: "warmup", label: "Aquecimento" },
-  { value: "run", label: "Corrida" },
-  { value: "recovery", label: "Recuperação" },
-  { value: "cooldown", label: "Desaquecimento" },
-];
 
-function parsePace(value: string): number | null {
-  const match = /^(\d{1,2}):([0-5]\d)$/.exec(value.trim());
-  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
-}
 
 const effortLabels: Record<Effort, string> = {
   easy: "Leve",
@@ -88,13 +59,10 @@ function CoachClub() {
   const reviewActivity = trpc.club.reviewActivity.useMutation({ onSuccess: () => utils.club.coachActivityFeed.invalidate() });
   const reviewDraft = trpc.ai.reviewDraft.useMutation();
 
-  const [title, setTitle] = useState("");
-  const [objective, setObjective] = useState("");
-  const [description, setDescription] = useState("");
+  const [draft, setDraft] = useState<WorkoutDraft>(emptyWorkoutDraft());
   const [selectedAthlete, setSelectedAthlete] = useState<number | null>(null);
   const [selectedWorkout, setSelectedWorkout] = useState<number | null>(null);
   const [scheduledDate, setScheduledDate] = useState(localDate());
-  const [stepDrafts, setStepDrafts] = useState<WorkoutStepDraft[]>([emptyStep()]);
   const [reviewDrafts, setReviewDrafts] = useState<Record<number, string>>({});
   const [reviewRatings, setReviewRatings] = useState<Record<number, number>>({});
   const [notice, setNotice] = useState("");
@@ -102,39 +70,8 @@ function CoachClub() {
 
   const makeAndAssign = async () => {
     setNotice("");
-    if (title.trim().length < 2 || objective.trim().length < 2) {
-      setNotice("Preencha o nome e o objetivo do treino.");
-      return;
-    }
     try {
-      const steps = stepDrafts.map((step) => {
-        const durationRaw = step.durationMinutes.trim();
-        const distanceRaw = step.distanceKm.trim().replace(",", ".");
-        const paceRaw = step.targetPace.trim();
-        const durationSeconds = durationRaw ? Math.round(Number(durationRaw) * 60) : null;
-        const distanceMeters = distanceRaw ? Math.round(Number(distanceRaw) * 1000) : null;
-        const targetPaceSecondsPerKm = paceRaw ? parsePace(paceRaw) : null;
-        if (!step.label.trim()) throw new Error("Dê um nome a cada etapa do treino.");
-        if (durationRaw && (durationSeconds === null || !Number.isFinite(durationSeconds) || durationSeconds <= 0)) throw new Error("Confira a duração das etapas; use minutos maiores que zero.");
-        if (distanceRaw && (distanceMeters === null || !Number.isFinite(distanceMeters) || distanceMeters <= 0)) throw new Error("Confira as distâncias; use quilômetros maiores que zero.");
-        if (paceRaw && !targetPaceSecondsPerKm) throw new Error("Use o formato mm:ss no ritmo-alvo, por exemplo 06:30.");
-        if (!durationSeconds && !distanceMeters) throw new Error("Cada etapa precisa ter duração ou distância.");
-        return {
-          kind: step.kind,
-          label: step.label.trim(),
-          durationSeconds,
-          distanceMeters,
-          targetPaceSecondsPerKm,
-          instruction: step.instruction.trim() || null,
-        };
-      });
-      const workoutInput = {
-        title: title.trim(),
-        objective: objective.trim(),
-        description: description.trim() || undefined,
-        level: "Todos",
-        steps,
-      };
+      const workoutInput = workoutInputFrom(draft);
       const created = selectedAthlete
         ? await createAndAssignWorkout.mutateAsync({ ...workoutInput, athleteId: selectedAthlete, scheduledDate })
         : await createWorkout.mutateAsync(workoutInput);
@@ -143,10 +80,7 @@ function CoachClub() {
       } else {
         setNotice("Treino salvo na biblioteca. Selecione um aluno e use a lista abaixo para atribuí-lo.");
       }
-      setTitle("");
-      setObjective("");
-      setDescription("");
-      setStepDrafts([emptyStep()]);
+      setDraft(emptyWorkoutDraft());
       setSelectedWorkout(created.workoutId);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Não foi possível salvar o treino.");
@@ -182,10 +116,7 @@ function CoachClub() {
   };
 
   const applyAiWorkout = (workout: AiWorkout, date: string) => {
-    setTitle(workout.title);
-    setObjective(workout.objective);
-    setDescription(workout.description);
-    setStepDrafts(stepDraftsFrom(workout));
+    setDraft(draftFromAi(workout));
     setScheduledDate(date);
   };
 
@@ -284,29 +215,9 @@ function CoachClub() {
         />
         <View style={styles.formCard}>
           <Text style={styles.formSection}>1 · O treino</Text>
-          <Text style={styles.formLabel}>Nome do treino</Text>
-          <TextInput value={title} onChangeText={setTitle} placeholder="Ex.: Corrida leve + educativos" placeholderTextColor={C.muted} style={styles.input} />
-          <Text style={styles.formLabel}>Objetivo</Text>
-          <TextInput value={objective} onChangeText={setObjective} placeholder="Ex.: Construir constância sem forçar" placeholderTextColor={C.muted} style={styles.input} />
-          <Text style={styles.formLabel}>Descrição (opcional)</Text>
-          <TextInput value={description} onChangeText={setDescription} placeholder="Contexto e orientações gerais do treino" placeholderTextColor={C.muted} multiline style={[styles.input, styles.stepInstruction]} />
+          <WorkoutEditor value={draft} onChange={setDraft} />
 
-          <View style={[styles.stepEditorHeader, styles.formSectionGap]}><Text style={styles.formSection}>2 · Etapas</Text><Text style={styles.cardDetail}>{stepDrafts.length}/12</Text></View>
-          {stepDrafts.map((step, index) => <View key={index} style={styles.stepEditor}>
-            <View style={styles.stepEditorHeader}><View style={styles.stepNumber}><Text style={styles.stepNumberText}>{index + 1}</Text></View>{stepDrafts.length > 1 ? <Pressable accessibilityLabel={`Remover etapa ${index + 1}`} onPress={() => setStepDrafts((current) => current.filter((_, position) => position !== index))}><Ionicons name="trash-outline" size={19} color={C.muted} /></Pressable> : null}</View>
-            <View style={styles.choiceWrap}>{stepKinds.map((kind) => <Pressable key={kind.value} onPress={() => setStepDrafts((current) => current.map((item, position) => position === index ? { ...item, kind: kind.value } : item))} style={[styles.choice, step.kind === kind.value && styles.choiceSelected]}><Text style={[styles.choiceText, step.kind === kind.value && styles.choiceTextSelected]}>{kind.label}</Text></Pressable>)}</View>
-            <TextInput value={step.label} onChangeText={(value) => setStepDrafts((current) => current.map((item, position) => position === index ? { ...item, label: value } : item))} placeholder="Nome da etapa" placeholderTextColor={C.muted} style={styles.input} accessibilityLabel={`Nome da etapa ${index + 1}`} />
-            <View style={styles.metricsInputRow}><Text style={styles.inputCaption}>Minutos</Text><Text style={styles.inputCaption}>Km</Text><Text style={styles.inputCaption}>Ritmo /km</Text></View>
-            <View style={styles.metricsInputRow}>
-              <TextInput keyboardType="decimal-pad" value={step.durationMinutes} onChangeText={(value) => setStepDrafts((current) => current.map((item, position) => position === index ? { ...item, durationMinutes: value } : item))} placeholder="Duração (min)" placeholderTextColor={C.muted} style={[styles.input, styles.metricInput]} accessibilityLabel={`Duração da etapa ${index + 1} em minutos`} />
-              <TextInput keyboardType="decimal-pad" value={step.distanceKm} onChangeText={(value) => setStepDrafts((current) => current.map((item, position) => position === index ? { ...item, distanceKm: value } : item))} placeholder="Distância (km)" placeholderTextColor={C.muted} style={[styles.input, styles.metricInput]} accessibilityLabel={`Distância da etapa ${index + 1} em quilômetros`} />
-              <TextInput value={step.targetPace} onChangeText={(value) => setStepDrafts((current) => current.map((item, position) => position === index ? { ...item, targetPace: value } : item))} placeholder="Ritmo mm:ss" placeholderTextColor={C.muted} style={[styles.input, styles.metricInput]} accessibilityLabel={`Ritmo-alvo da etapa ${index + 1}`} />
-            </View>
-            <TextInput value={step.instruction} onChangeText={(value) => setStepDrafts((current) => current.map((item, position) => position === index ? { ...item, instruction: value } : item))} placeholder="Instrução para o aluno (opcional)" placeholderTextColor={C.muted} multiline style={[styles.input, styles.stepInstruction]} accessibilityLabel={`Instrução da etapa ${index + 1}`} />
-          </View>)}
-          {stepDrafts.length < 12 ? <Pressable onPress={() => setStepDrafts((current) => [...current, { ...emptyStep(), durationMinutes: "", label: "" }])} style={({ pressed }) => [styles.addStep, pressed && styles.pressed]}><Ionicons name="add-circle-outline" size={18} color={C.ink} /><Text style={styles.addStepText}>Adicionar etapa</Text></Pressable> : null}
-
-          <Text style={[styles.formSection, styles.formSectionGap]}>3 · Para quem e quando</Text>
+          <Text style={[styles.formSection, styles.formSectionGap]}>2 · Para quem e quando</Text>
           <Text style={styles.formLabel}>Aluno (opcional — sem aluno, o treino vai para a biblioteca)</Text>
           <View style={styles.choiceWrap}>
             {athletes.data?.map((athlete) => <Pressable key={athlete.userId} onPress={() => setSelectedAthlete(selectedAthlete === athlete.userId ? null : athlete.userId)} style={[styles.choice, styles.athleteChoice, selectedAthlete === athlete.userId && styles.choiceSelected]}><ProfileAvatar uri={athlete.avatarUrl} name={athlete.name || athlete.email} size={23} /><Text style={[styles.choiceText, selectedAthlete === athlete.userId && styles.choiceTextSelected]}>{athlete.name || athlete.email}</Text></Pressable>)}

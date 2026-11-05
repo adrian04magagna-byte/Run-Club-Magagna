@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -39,6 +39,27 @@ const workoutInputSchema = z.object({
   level: z.string().trim().min(2).max(32).default("Todos"),
   steps: z.array(stepInput).min(1).max(12),
 });
+
+type Tx = Parameters<Parameters<Awaited<ReturnType<typeof requireDb>>["transaction"]>[0]>[0];
+
+function stepRows(workoutId: number, steps: z.infer<typeof workoutInputSchema>["steps"]) {
+  return steps.map((step, index) => ({
+    workoutId,
+    stepOrder: index + 1,
+    kind: step.kind,
+    label: step.label,
+    durationSeconds: step.durationSeconds ?? null,
+    distanceMeters: step.distanceMeters ?? null,
+    targetPaceSecondsPerKm: step.targetPaceSecondsPerKm ?? null,
+    instruction: step.instruction || null,
+  }));
+}
+
+async function requireOwnedWorkout(db: Tx | Awaited<ReturnType<typeof requireDb>>, coachId: number, workoutId: number) {
+  const rows = await db.select().from(workouts).where(and(eq(workouts.id, workoutId), eq(workouts.coachId, coachId))).limit(1);
+  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Treino não encontrado." });
+  return rows[0];
+}
 
 async function requireDb() {
   const db = await getDb();
@@ -116,10 +137,108 @@ export const clubRouter = router({
 
   workouts: adminProcedure.query(async ({ ctx }) => {
     const db = await requireDb();
-    const items = await db.select().from(workouts).where(eq(workouts.coachId, ctx.user.id)).orderBy(desc(workouts.createdAt));
+    const items = await db.select().from(workouts).where(eq(workouts.coachId, ctx.user.id)).orderBy(desc(workouts.updatedAt));
     if (!items.length) return [];
-    const steps = await db.select().from(workoutSteps).where(inArray(workoutSteps.workoutId, items.map((item) => item.id))).orderBy(workoutSteps.stepOrder);
-    return items.map((workout) => ({ ...workout, steps: steps.filter((step) => step.workoutId === workout.id) }));
+    const ids = items.map((item) => item.id);
+    const steps = await db.select().from(workoutSteps).where(inArray(workoutSteps.workoutId, ids)).orderBy(workoutSteps.stepOrder);
+    const uses = await db.select({ workoutId: workoutAssignments.workoutId, status: workoutAssignments.status }).from(workoutAssignments).where(inArray(workoutAssignments.workoutId, ids));
+    return items.map((workout) => ({
+      ...workout,
+      steps: steps.filter((step) => step.workoutId === workout.id),
+      pendingCount: uses.filter((use) => use.workoutId === workout.id && use.status === "assigned").length,
+      completedCount: uses.filter((use) => use.workoutId === workout.id && use.status === "completed").length,
+    }));
+  }),
+
+  /** Rewrites a library workout and its steps; pending assignments of it show the new version. */
+  updateWorkout: adminProcedure.input(workoutInputSchema.extend({ workoutId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    await db.transaction(async (tx) => {
+      await requireOwnedWorkout(tx, ctx.user.id, input.workoutId);
+      await tx.update(workouts).set({
+        title: input.title,
+        objective: input.objective,
+        description: input.description || null,
+        level: input.level,
+        updatedAt: new Date(),
+      }).where(eq(workouts.id, input.workoutId));
+      await tx.delete(workoutSteps).where(eq(workoutSteps.workoutId, input.workoutId));
+      await tx.insert(workoutSteps).values(stepRows(input.workoutId, input.steps));
+    });
+    return { workoutId: input.workoutId };
+  }),
+
+  duplicateWorkout: adminProcedure.input(z.object({ workoutId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const workoutId = await db.transaction(async (tx) => {
+      const original = await requireOwnedWorkout(tx, ctx.user.id, input.workoutId);
+      const steps = await tx.select().from(workoutSteps).where(eq(workoutSteps.workoutId, original.id)).orderBy(workoutSteps.stepOrder);
+      const inserted = await tx.insert(workouts).values({
+        coachId: ctx.user.id,
+        title: `${original.title} (cópia)`.slice(0, 140),
+        objective: original.objective,
+        description: original.description,
+        level: original.level,
+      }).returning({ id: workouts.id });
+      const id = inserted[0]!.id;
+      if (steps.length) await tx.insert(workoutSteps).values(steps.map(({ id: _id, workoutId: _workoutId, ...step }) => ({ ...step, workoutId: id })));
+      return id;
+    });
+    return { workoutId };
+  }),
+
+  /** Deletes a library workout with its pending sends; runs the athletes already logged stay in their history. */
+  deleteWorkout: adminProcedure.input(z.object({ workoutId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    await requireOwnedWorkout(db, ctx.user.id, input.workoutId);
+    await db.delete(workouts).where(and(eq(workouts.id, input.workoutId), eq(workouts.coachId, ctx.user.id)));
+    return { success: true };
+  }),
+
+  /** The coach's sends, for the plan calendar. */
+  coachAssignments: adminProcedure.input(z.object({ from: scheduledDateInput, to: scheduledDateInput })).query(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const rows = await db.select({
+      id: workoutAssignments.id,
+      scheduledDate: workoutAssignments.scheduledDate,
+      status: workoutAssignments.status,
+      workoutId: workouts.id,
+      title: workouts.title,
+      objective: workouts.objective,
+      athleteId: users.id,
+      athleteName: users.name,
+      athleteProfileName: users.profileName,
+      athleteEmail: users.email,
+      athleteAvatarKey: users.avatarKey,
+    })
+      .from(workoutAssignments)
+      .innerJoin(workouts, eq(workouts.id, workoutAssignments.workoutId))
+      .innerJoin(users, eq(users.id, workoutAssignments.athleteId))
+      .where(and(eq(workoutAssignments.coachId, ctx.user.id), gte(workoutAssignments.scheduledDate, input.from), lte(workoutAssignments.scheduledDate, input.to)))
+      .orderBy(workoutAssignments.scheduledDate, workoutAssignments.id);
+    return Promise.all(rows.map(async ({ athleteProfileName, athleteAvatarKey, ...row }) => ({
+      ...row,
+      athleteName: athleteProfileName || row.athleteName || row.athleteEmail || "Aluno",
+      athleteAvatarUrl: await getProfileAvatarUrl(row.athleteId, athleteAvatarKey),
+    })));
+  }),
+
+  rescheduleAssignment: adminProcedure.input(z.object({ assignmentId: z.number().int().positive(), scheduledDate: scheduledDateInput })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const updated = await db.update(workoutAssignments).set({ scheduledDate: input.scheduledDate })
+      .where(and(eq(workoutAssignments.id, input.assignmentId), eq(workoutAssignments.coachId, ctx.user.id), eq(workoutAssignments.status, "assigned")))
+      .returning({ id: workoutAssignments.id });
+    if (!updated.length) throw new TRPCError({ code: "NOT_FOUND", message: "Só dá para remarcar treinos que o aluno ainda não fez." });
+    return { success: true };
+  }),
+
+  removeAssignment: adminProcedure.input(z.object({ assignmentId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const removed = await db.delete(workoutAssignments)
+      .where(and(eq(workoutAssignments.id, input.assignmentId), eq(workoutAssignments.coachId, ctx.user.id), eq(workoutAssignments.status, "assigned")))
+      .returning({ id: workoutAssignments.id });
+    if (!removed.length) throw new TRPCError({ code: "NOT_FOUND", message: "Só dá para remover treinos que o aluno ainda não fez." });
+    return { success: true };
   }),
 
   createWorkout: adminProcedure.input(workoutInputSchema).mutation(async ({ ctx, input }) => {
@@ -134,16 +253,7 @@ export const clubRouter = router({
       }).returning({ id: workouts.id });
       const id = inserted[0]?.id;
       if (!id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível salvar o treino." });
-      await tx.insert(workoutSteps).values(input.steps.map((step, index) => ({
-        workoutId: id,
-        stepOrder: index + 1,
-        kind: step.kind,
-        label: step.label,
-        durationSeconds: step.durationSeconds ?? null,
-        distanceMeters: step.distanceMeters ?? null,
-        targetPaceSecondsPerKm: step.targetPaceSecondsPerKm ?? null,
-        instruction: step.instruction || null,
-      })));
+      await tx.insert(workoutSteps).values(stepRows(id, input.steps));
       return id;
     });
     return { workoutId };
@@ -168,16 +278,7 @@ export const clubRouter = router({
       }).returning({ id: workouts.id });
       const workoutId = inserted[0]?.id;
       if (!workoutId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível salvar o treino." });
-      await tx.insert(workoutSteps).values(input.steps.map((step, index) => ({
-        workoutId,
-        stepOrder: index + 1,
-        kind: step.kind,
-        label: step.label,
-        durationSeconds: step.durationSeconds ?? null,
-        distanceMeters: step.distanceMeters ?? null,
-        targetPaceSecondsPerKm: step.targetPaceSecondsPerKm ?? null,
-        instruction: step.instruction || null,
-      })));
+      await tx.insert(workoutSteps).values(stepRows(workoutId, input.steps));
       const assignment = await tx.insert(workoutAssignments).values({
         coachId: ctx.user.id,
         athleteId: input.athleteId,

@@ -59,7 +59,7 @@ export function CoachAiCard({ athleteId, athleteName, date, onApply }: {
     <View style={styles.card}>
       <Header />
       <Text style={styles.text}>
-        {athleteName ? `Usa o histórico de ${athleteName} no clube e a sua biblioteca como estilo.` : "Sem aluno escolhido: a IA monta um treino genérico. Escolha o aluno no passo 3 para personalizar."}
+        {athleteName ? `Usa o histórico de ${athleteName} no clube e a sua biblioteca como estilo.` : "Sem aluno escolhido: a IA monta um treino genérico. Escolha o aluno no passo 2 para personalizar."}
       </Text>
       <TextInput
         value={focus}
