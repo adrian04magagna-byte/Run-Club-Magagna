@@ -5,15 +5,14 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 
 import { DateChips, EmptyState, Segmented, SourceBadge, STRAVA_ORANGE, formatDay, formatKm, formatPace } from "@/components/dashboard-ui";
 import { AppHeader, C, CoachNote, Pill, Screen, SectionTitle } from "@/components/run-ui";
-import { CoachAiCard } from "@/components/coach-ai-card";
-import { WorkoutEditor, draftFromAi, emptyWorkoutDraft, workoutInputFrom, type WorkoutDraft } from "@/components/workout-editor";
+import { AthleteSheet, CoachAthletes } from "@/components/coach-athletes";
 import { ProfileAvatar } from "@/components/profile-avatar";
+import { ReviewForm } from "@/components/review-form";
 import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
-import type { AiWorkout } from "@/shared/coach-ai";
 
 type Effort = "easy" | "challenging" | "intense";
-type CoachTab = "team" | "review" | "create";
+type CoachTab = "team" | "review";
 type AthleteTab = "agenda" | "log" | "history";
 type ActivityDraft = { date: string; distance: string; minutes: string; note: string; effort: Effort };
 
@@ -48,106 +47,30 @@ export default function ClubScreen() {
 function CoachClub() {
   const utils = trpc.useUtils();
   const pending = trpc.club.pendingAthletes.useQuery();
-  const athletes = trpc.club.athletes.useQuery();
-  const workouts = trpc.club.workouts.useQuery();
   const feed = trpc.club.coachActivityFeed.useQuery();
-  const approve = trpc.club.approveAthlete.useMutation({ onSuccess: async () => { await Promise.all([utils.club.pendingAthletes.invalidate(), utils.club.athletes.invalidate()]); } });
-  const reject = trpc.club.rejectAthlete.useMutation({ onSuccess: () => utils.club.pendingAthletes.invalidate() });
-  const createWorkout = trpc.club.createWorkout.useMutation({ onSuccess: () => utils.club.workouts.invalidate() });
-  const createAndAssignWorkout = trpc.club.createAndAssignWorkout.useMutation({ onSuccess: async () => { await Promise.all([utils.club.workouts.invalidate(), utils.club.athletes.invalidate()]); } });
-  const assignWorkout = trpc.club.assignWorkout.useMutation({ onSuccess: () => utils.club.myAssignments.invalidate() });
-  const reviewActivity = trpc.club.reviewActivity.useMutation({ onSuccess: () => utils.club.coachActivityFeed.invalidate() });
-  const reviewDraft = trpc.ai.reviewDraft.useMutation();
-
-  const [draft, setDraft] = useState<WorkoutDraft>(emptyWorkoutDraft());
-  const [selectedAthlete, setSelectedAthlete] = useState<number | null>(null);
-  const [selectedWorkout, setSelectedWorkout] = useState<number | null>(null);
-  const [scheduledDate, setScheduledDate] = useState(localDate());
-  const [reviewDrafts, setReviewDrafts] = useState<Record<number, string>>({});
-  const [reviewRatings, setReviewRatings] = useState<Record<number, number>>({});
-  const [notice, setNotice] = useState("");
-  const saving = createWorkout.isPending || createAndAssignWorkout.isPending || assignWorkout.isPending || reviewActivity.isPending;
-
-  const makeAndAssign = async () => {
-    setNotice("");
-    try {
-      const workoutInput = workoutInputFrom(draft);
-      const created = selectedAthlete
-        ? await createAndAssignWorkout.mutateAsync({ ...workoutInput, athleteId: selectedAthlete, scheduledDate })
-        : await createWorkout.mutateAsync(workoutInput);
-      if (selectedAthlete) {
-        setNotice("Treino criado e atribuído para a data escolhida.");
-      } else {
-        setNotice("Treino salvo na biblioteca. Selecione um aluno e use a lista abaixo para atribuí-lo.");
-      }
-      setDraft(emptyWorkoutDraft());
-      setSelectedWorkout(created.workoutId);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Não foi possível salvar o treino.");
-    }
-  };
-
-  const assignSelected = async () => {
-    if (!selectedAthlete || !selectedWorkout) {
-      setNotice("Escolha um aluno e um treino para fazer a atribuição.");
-      return;
-    }
-    try {
-      await assignWorkout.mutateAsync({ athleteId: selectedAthlete, workoutId: selectedWorkout, scheduledDate });
-      setNotice("Treino atribuído para a data escolhida.");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Não foi possível atribuir o treino.");
-    }
-  };
-
-  const saveReview = async (activityId: number) => {
-    const comment = reviewDrafts[activityId]?.trim();
-    if (!comment) {
-      setNotice("Escreva um comentário antes de salvar a avaliação.");
-      return;
-    }
-    try {
-      await reviewActivity.mutateAsync({ activityId, rating: reviewRatings[activityId] ?? 5, comment });
-      setReviewDrafts((current) => ({ ...current, [activityId]: "" }));
-      setNotice("Avaliação enviada ao aluno.");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Não foi possível salvar a avaliação.");
-    }
-  };
-
-  const applyAiWorkout = (workout: AiWorkout, date: string) => {
-    setDraft(draftFromAi(workout));
-    setScheduledDate(date);
-  };
-
-  const draftReview = async (activityId: number) => {
-    setNotice("");
-    try {
-      const draft = await reviewDraft.mutateAsync({ activityId, today: localDate() });
-      setReviewDrafts((current) => ({ ...current, [activityId]: draft.comment }));
-      setReviewRatings((current) => ({ ...current, [activityId]: draft.rating }));
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "A IA não respondeu agora.");
-    }
-  };
-
-  const pageError = pending.error || athletes.error || workouts.error || feed.error;
-  const toReview = (feed.data ?? []).filter((entry) => !entry.review);
+  const refreshTeam = () => Promise.all([utils.club.pendingAthletes.invalidate(), utils.club.athletes.invalidate(), utils.club.clubAthletes.invalidate()]);
+  const approve = trpc.club.approveAthlete.useMutation({ onSuccess: refreshTeam });
+  const reject = trpc.club.rejectAthlete.useMutation({ onSuccess: refreshTeam });
   const [tab, setTab] = useState<CoachTab | null>(null);
-  if (pending.isLoading || athletes.isLoading || workouts.isLoading || feed.isLoading) return <LoadingState />;
+  const [openAthlete, setOpenAthlete] = useState<number | null>(null);
+  const [notice, setNotice] = useState("");
+
+  const pageError = pending.error || feed.error;
+  const toReview = (feed.data ?? []).filter((entry) => !entry.review);
+  if (pending.isLoading || feed.isLoading) return <LoadingState />;
+  if (openAthlete) return <Screen scroll><AthleteSheet athleteId={openAthlete} onBack={() => setOpenAthlete(null)} /></Screen>;
   // Open where the coach is needed first: approvals, then reviews.
   const activeTab: CoachTab = tab ?? (pending.data?.length ? "team" : toReview.length ? "review" : "team");
 
   return (
     <Screen scroll>
-      <AppHeader eyebrow="GESTÃO DO CLUBE" title="Sua turma" right={<View style={styles.countBadge}><Text style={styles.countNumber}>{athletes.data?.length ?? 0}</Text><Text style={styles.countLabel}>alunos</Text></View>} />
+      <AppHeader eyebrow="GESTÃO DO CLUBE" title="Alunos" />
       <Segmented<CoachTab>
         value={activeTab}
         onChange={(value) => { setTab(value); setNotice(""); }}
         options={[
           { value: "team", label: "Turma", badge: pending.data?.length },
           { value: "review", label: "Avaliar", badge: toReview.length },
-          { value: "create", label: "Criar treino" },
         ]}
       />
       <View style={styles.tabGap} />
@@ -155,32 +78,27 @@ function CoachClub() {
       {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
 
       {activeTab === "team" ? <>
-        <SectionTitle title="Pedidos de acesso" />
-        {pending.data?.length ? pending.data.map((item) => (
-          <View key={item.userId} style={styles.requestCard}>
-            <ProfileAvatar name={item.name} size={42} />
-            <View style={styles.flexCopy}><Text style={styles.cardTitle}>{item.name}</Text><Text style={styles.cardDetail}>{item.email}</Text></View>
-            <Pressable accessibilityLabel={`Rejeitar ${item.name}`} onPress={() => reject.mutate({ athleteId: item.userId })} style={({ pressed }) => [styles.rejectButton, pressed && styles.pressed]}><Ionicons name="close" size={19} color={C.ink} /></Pressable>
-            <Pressable accessibilityLabel={`Aprovar ${item.name}`} onPress={() => approve.mutate({ athleteId: item.userId })} style={({ pressed }) => [styles.approveButton, pressed && styles.pressed]}><Ionicons name="checkmark" size={19} color={C.ink} /><Text style={styles.approveText}>Aprovar</Text></Pressable>
-          </View>
-        )) : <EmptyState icon="person-add-outline" title="Nenhum pedido pendente" text="Novos cadastros aparecem aqui para sua aprovação." />}
-
-        <View style={styles.gap} />
-        <SectionTitle title="Alunos aprovados" action="Criar treino" onPress={() => setTab("create")} />
-        {athletes.data?.length ? <View style={styles.list}>{athletes.data.map((athlete) => (
-          <Pressable key={athlete.userId} onPress={() => { setSelectedAthlete(athlete.userId); setTab("create"); }} style={({ pressed }) => [styles.athleteRow, pressed && styles.pressed]}>
-            <ProfileAvatar uri={athlete.avatarUrl} name={athlete.name || athlete.email} size={42} />
-            <View style={styles.flexCopy}><Text style={styles.cardTitle}>{athlete.name || athlete.email}</Text><Text style={styles.cardDetail}>{athlete.email}</Text></View>
-            <View style={styles.rowAction}><Ionicons name="add" size={16} color={C.ink} /><Text style={styles.rowActionText}>Treino</Text></View>
-          </Pressable>
-        ))}</View> : <EmptyState icon="people-outline" title="Sua turma ainda está vazia" text="Aprove os pedidos de acesso para começar a enviar treinos." />}
+        {pending.data?.length ? <>
+          <SectionTitle title={`Pedidos de acesso · ${pending.data.length}`} />
+          {pending.data.map((item) => (
+            <View key={item.userId} style={styles.requestCard}>
+              <ProfileAvatar name={item.name} size={42} />
+              <View style={styles.flexCopy}><Text style={styles.cardTitle}>{item.name}</Text><Text style={styles.cardDetail}>{item.email}</Text></View>
+              <Pressable accessibilityLabel={`Rejeitar ${item.name}`} onPress={() => reject.mutate({ athleteId: item.userId })} style={({ pressed }) => [styles.rejectButton, pressed && styles.pressed]}><Ionicons name="close" size={19} color={C.ink} /></Pressable>
+              <Pressable accessibilityLabel={`Aprovar ${item.name}`} onPress={() => approve.mutate({ athleteId: item.userId })} style={({ pressed }) => [styles.approveButton, pressed && styles.pressed]}><Ionicons name="checkmark" size={19} color={C.ink} /><Text style={styles.approveText}>Aprovar</Text></Pressable>
+            </View>
+          ))}
+          <View style={styles.gap} />
+        </> : null}
+        <CoachAthletes onOpen={(athleteId) => { setNotice(""); setOpenAthlete(athleteId); }} onNotice={setNotice} />
       </> : null}
 
       {activeTab === "review" ? <>
+        <Text style={styles.helper}>Corridas dos alunos que você acompanha.</Text>
         {feed.data?.length ? feed.data.map(({ activity, athleteName, athleteAvatarUrl, review }) => (
           <View key={activity.id} style={[styles.activityCard, !review && styles.activityOpen]}>
             <View style={styles.activityTop}>
-              <View style={styles.athleteIdentity}><ProfileAvatar uri={athleteAvatarUrl} name={athleteName} size={34} /><View><Text style={styles.cardTitle}>{athleteName || "Aluno"}</Text><Text style={styles.cardDetail}>{new Date(activity.completedAt).toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}</Text></View></View>
+              <Pressable onPress={() => setOpenAthlete(activity.athleteId)} accessibilityLabel={`Abrir ficha de ${athleteName || "aluno"}`} style={styles.athleteIdentity}><ProfileAvatar uri={athleteAvatarUrl} name={athleteName} size={34} /><View><Text style={styles.cardTitle}>{athleteName || "Aluno"}</Text><Text style={styles.cardDetail}>{new Date(activity.completedAt).toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}</Text></View></Pressable>
               <Pill label={review ? "AVALIADO" : "AGUARDA"} tone={review ? "lime" : "coral"} />
             </View>
             <Text style={styles.activityTitle}>{activity.title}</Text>
@@ -191,51 +109,11 @@ function CoachClub() {
               {activity.perceivedEffort ? <MetricChip icon="pulse-outline" text={effortLabels[activity.perceivedEffort]} /> : null}
             </View>
             {activity.athleteNote ? <Text style={styles.athleteNote}>“{activity.athleteNote}”</Text> : null}
-            {review ? <View style={styles.reviewed}><Text style={styles.reviewedTitle}>Sua avaliação · {review.rating}/5</Text><Text style={styles.cardDetail}>{review.comment}</Text></View> : <>
-              <View style={styles.ratingRow}>{[1, 2, 3, 4, 5].map((rating) => <Pressable key={rating} accessibilityLabel={`Avaliar com ${rating} de 5`} onPress={() => setReviewRatings((current) => ({ ...current, [activity.id]: rating }))} style={styles.starButton}><Ionicons name={rating <= (reviewRatings[activity.id] ?? 5) ? "star" : "star-outline"} size={24} color={C.limeDeep} /></Pressable>)}</View>
-              <Pressable disabled={reviewDraft.isPending} onPress={() => draftReview(activity.id)} style={({ pressed }) => [styles.aiDraftButton, reviewDraft.isPending && styles.disabled, pressed && styles.pressed]}>
-                {reviewDraft.isPending && reviewDraft.variables?.activityId === activity.id ? <ActivityIndicator size="small" color={C.ink} /> : <Ionicons name="sparkles" size={14} color={C.ink} />}
-                <Text style={styles.aiDraftText}>Rascunho com IA</Text>
-              </Pressable>
-              <TextInput value={reviewDrafts[activity.id] ?? ""} onChangeText={(value) => setReviewDrafts((current) => ({ ...current, [activity.id]: value }))} placeholder="Deixe seu comentário para o aluno" placeholderTextColor={C.muted} multiline style={[styles.input, styles.reviewInput]} />
-              <Pressable disabled={reviewActivity.isPending} onPress={() => saveReview(activity.id)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}><Text style={styles.primaryButtonText}>Enviar avaliação</Text></Pressable>
-            </>}
+            {review ? <View style={styles.reviewed}><Text style={styles.reviewedTitle}>Sua avaliação · {review.rating}/5</Text><Text style={styles.cardDetail}>{review.comment}</Text></View> : <ReviewForm activityId={activity.id} onNotice={setNotice} />}
           </View>
         )) : <EmptyState icon="checkmark-done-outline" title="Tudo em dia" text="Os treinos registrados pelos alunos aparecem aqui para você avaliar." />}
         <View style={styles.gap} />
         <CoachNote label="STRAVA">O histórico Strava é particular de cada aluno e não aparece aqui. Esta área avalia os treinos que o aluno registra no clube.</CoachNote>
-      </> : null}
-
-      {activeTab === "create" ? <>
-        <CoachAiCard
-          athleteId={selectedAthlete}
-          athleteName={(() => { const athlete = athletes.data?.find((athlete) => athlete.userId === selectedAthlete); return athlete ? athlete.name || athlete.email : null; })()}
-          date={scheduledDate}
-          onApply={applyAiWorkout}
-        />
-        <View style={styles.formCard}>
-          <Text style={styles.formSection}>1 · O treino</Text>
-          <WorkoutEditor value={draft} onChange={setDraft} />
-
-          <Text style={[styles.formSection, styles.formSectionGap]}>2 · Para quem e quando</Text>
-          <Text style={styles.formLabel}>Aluno (opcional — sem aluno, o treino vai para a biblioteca)</Text>
-          <View style={styles.choiceWrap}>
-            {athletes.data?.map((athlete) => <Pressable key={athlete.userId} onPress={() => setSelectedAthlete(selectedAthlete === athlete.userId ? null : athlete.userId)} style={[styles.choice, styles.athleteChoice, selectedAthlete === athlete.userId && styles.choiceSelected]}><ProfileAvatar uri={athlete.avatarUrl} name={athlete.name || athlete.email} size={23} /><Text style={[styles.choiceText, selectedAthlete === athlete.userId && styles.choiceTextSelected]}>{athlete.name || athlete.email}</Text></Pressable>)}
-            {!athletes.data?.length ? <Text style={styles.cardDetail}>Aprove um aluno para começar a atribuir treinos.</Text> : null}
-          </View>
-          <Text style={styles.formLabel}>Data</Text>
-          <DateChips value={scheduledDate} onChange={setScheduledDate} />
-          <TextInput value={scheduledDate} onChangeText={setScheduledDate} placeholder="AAAA-MM-DD" placeholderTextColor={C.muted} style={styles.input} accessibilityLabel="Data de atribuição no formato ano-mês-dia" />
-          <Pressable disabled={saving} onPress={makeAndAssign} style={({ pressed }) => [styles.primaryButton, saving && styles.disabled, pressed && styles.pressed]}><Text style={styles.primaryButtonText}>{createWorkout.isPending || createAndAssignWorkout.isPending ? "Salvando…" : selectedAthlete ? "Criar e enviar ao aluno" : "Salvar na biblioteca"}</Text></Pressable>
-        </View>
-
-        {workouts.data?.length ? <>
-          <View style={styles.gap} />
-          <SectionTitle title="Reenviar da biblioteca" />
-          <Text style={styles.helper}>Escolha um treino salvo, um aluno acima e a data.</Text>
-          {workouts.data.map((workout) => <Pressable key={workout.id} onPress={() => setSelectedWorkout(workout.id)} style={[styles.workoutCard, selectedWorkout === workout.id && styles.workoutSelected]}><View style={styles.flexCopy}><Text style={styles.cardTitle}>{workout.title}</Text><Text style={styles.cardDetail}>{workout.objective} · {workout.steps.length} etapa(s)</Text></View>{selectedWorkout === workout.id ? <Ionicons name="checkmark-circle" size={21} color={C.limeDeep} /> : <Ionicons name="radio-button-off" size={20} color={C.muted} />}</Pressable>)}
-          <Pressable disabled={saving || !selectedAthlete || !selectedWorkout} onPress={assignSelected} style={({ pressed }) => [styles.secondaryButton, (!selectedAthlete || !selectedWorkout) && styles.disabled, pressed && styles.pressed]}><Text style={styles.secondaryText}>{selectedAthlete && selectedWorkout ? `Enviar treino selecionado · ${scheduledDate}` : "Selecione um aluno e um treino"}</Text></Pressable>
-        </> : null}
       </> : null}
     </Screen>
   );
@@ -404,26 +282,18 @@ function MetricChip({ icon, text }: { icon: "map-outline" | "time-outline" | "sp
 
 const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: C.paper },
-  countBadge: { minWidth: 58, minHeight: 48, borderRadius: 16, backgroundColor: C.lime, alignItems: "center", justifyContent: "center", paddingHorizontal: 10 },
-  countNumber: { color: C.ink, fontSize: 17, fontWeight: "900" },
-  countLabel: { color: C.ink, fontSize: 9, fontWeight: "800" },
   gap: { height: 27 },
   tabGap: { height: 18 },
   list: { gap: 10 },
   helper: { color: C.muted, fontSize: 12, lineHeight: 17, fontWeight: "600", marginBottom: 10 },
   formSection: { color: C.ink, fontSize: 15, fontWeight: "900" },
-  formSectionGap: { marginTop: 14 },
   approveText: { color: C.ink, fontSize: 12, fontWeight: "900" },
   athleteRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 18, backgroundColor: C.white, boxShadow: "0px 6px 16px rgba(11, 23, 32, 0.06)" },
-  rowAction: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: C.lime },
-  rowActionText: { color: C.ink, fontSize: 11, fontWeight: "900" },
   activityOpen: { borderColor: "#F6C4B5" },
   activityTitle: { color: C.ink, fontSize: 17, lineHeight: 22, fontWeight: "900", letterSpacing: -0.3 },
   metricChips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   metricChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 6, borderRadius: 10, backgroundColor: C.paper },
   metricChipText: { color: C.inkSoft, fontSize: 11, fontWeight: "800" },
-  stepNumber: { width: 26, height: 26, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: C.ink },
-  stepNumberText: { color: C.lime, fontSize: 12, fontWeight: "900" },
   effortChoice: { flexGrow: 1, alignItems: "center" },
   workoutOpen: { borderColor: C.ink },
   logBox: { gap: 10, padding: 12, borderRadius: 16, backgroundColor: C.paper },
@@ -431,63 +301,38 @@ const styles = StyleSheet.create({
   stepLine: { flex: 1, width: 2, marginTop: 3, backgroundColor: C.line },
   stravaIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: STRAVA_ORANGE },
   requestCard: { minHeight: 71, flexDirection: "row", alignItems: "center", gap: 10, padding: 12, marginBottom: 9, borderRadius: 18, backgroundColor: C.white, boxShadow: "0px 6px 16px rgba(11, 23, 32, 0.06)" },
-  avatar: { width: 39, height: 39, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: C.coral },
-  avatarText: { color: C.white, fontSize: 15, fontWeight: "900" },
   flexCopy: { flex: 1, gap: 3 },
   cardTitle: { color: C.ink, fontSize: 15, lineHeight: 20, fontWeight: "900" },
   cardDetail: { color: C.muted, fontSize: 11, lineHeight: 16, fontWeight: "600" },
   approveButton: { height: 38, flexDirection: "row", gap: 4, paddingHorizontal: 12, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: C.lime },
   rejectButton: { width: 38, height: 38, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: C.stone },
   pressed: { opacity: 0.72 },
-  emptyCard: { padding: 17, borderRadius: 18, backgroundColor: C.white, borderWidth: 1, borderColor: C.line, gap: 4 },
-  emptyTitle: { color: C.ink, fontSize: 14, fontWeight: "900" },
   formCard: { padding: 18, borderRadius: 24, backgroundColor: C.white, gap: 9, boxShadow: "0px 10px 24px rgba(11, 23, 32, 0.08)" },
   formLabel: { color: C.ink, fontSize: 11, fontWeight: "900", marginTop: 9 },
-  stepEditor: { gap: 9, padding: 12, borderRadius: 16, backgroundColor: C.paper, borderWidth: 1, borderColor: C.line },
-  stepEditorHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  stepEditorTitle: { color: C.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
-  stepInstruction: { minHeight: 61, textAlignVertical: "top" },
-  addStep: { minHeight: 40, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 13, borderWidth: 1, borderColor: C.line, backgroundColor: C.paper },
-  addStepText: { color: C.ink, fontSize: 12, fontWeight: "800" },
   input: { minHeight: 46, borderWidth: 1, borderColor: C.line, borderRadius: 13, paddingHorizontal: 13, paddingVertical: 10, color: C.ink, backgroundColor: C.paper, fontSize: 13, fontWeight: "600" },
   choiceWrap: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 3 },
   choice: { minHeight: 35, justifyContent: "center", paddingHorizontal: 11, borderRadius: 999, borderWidth: 1, borderColor: C.line, backgroundColor: C.paper },
-  athleteChoice: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 6 },
   choiceSelected: { borderColor: C.ink, backgroundColor: C.ink },
   choiceText: { color: C.ink, fontSize: 11, fontWeight: "800" },
   choiceTextSelected: { color: C.white },
   primaryButton: { minHeight: 49, borderRadius: 15, backgroundColor: C.lime, alignItems: "center", justifyContent: "center", marginTop: 8, paddingHorizontal: 12 },
   primaryButtonText: { color: C.ink, fontSize: 13, fontWeight: "900" },
-  secondaryButton: { minHeight: 47, borderRadius: 15, borderWidth: 1, borderColor: C.line, backgroundColor: C.white, alignItems: "center", justifyContent: "center", marginTop: 9, paddingHorizontal: 10 },
-  secondaryText: { color: C.ink, fontSize: 12, fontWeight: "800" },
   disabled: { opacity: 0.6 },
-  subheading: { color: C.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1, marginTop: 15, marginBottom: 7 },
-  workoutCard: { minHeight: 62, flexDirection: "row", alignItems: "center", gap: 10, padding: 13, marginBottom: 8, borderWidth: 1, borderColor: C.line, borderRadius: 17, backgroundColor: C.white },
-  workoutSelected: { borderColor: C.limeDeep, backgroundColor: "#F5F9E4" },
   activityCard: { padding: 16, borderRadius: 22, backgroundColor: C.white, borderWidth: 1, borderColor: "#ECEDE6", marginBottom: 10, gap: 10 },
   activityTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   athleteIdentity: { flexDirection: "row", alignItems: "center", gap: 7, flexShrink: 1 },
-  metricLine: { color: C.inkSoft, fontSize: 12, fontWeight: "800" },
   athleteNote: { color: C.muted, fontSize: 12, lineHeight: 18, fontWeight: "600" },
   reviewInput: { minHeight: 72, textAlignVertical: "top", marginTop: 4 },
-  smallPrimary: { minHeight: 43, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: C.lime, paddingHorizontal: 12 },
-  smallPrimaryText: { color: C.ink, fontSize: 12, fontWeight: "900" },
   reviewed: { padding: 12, borderRadius: 14, backgroundColor: C.sky, gap: 4 },
   reviewedTitle: { color: C.ink, fontSize: 11, fontWeight: "900" },
-  ratingRow: { flexDirection: "row", gap: 6 },
-  aiDraftButton: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 999, backgroundColor: C.lime, marginBottom: 2 },
-  aiDraftText: { color: C.ink, fontSize: 12, fontWeight: "900" },
-  starButton: { padding: 3 },
   notice: { color: C.inkSoft, backgroundColor: C.sky, padding: 11, borderRadius: 13, marginBottom: 12, fontSize: 12, lineHeight: 17, fontWeight: "700" },
   errorCard: { padding: 13, backgroundColor: "#F9D5CC", borderRadius: 14, marginBottom: 13 },
   errorText: { color: "#762E21", fontSize: 12, lineHeight: 17, fontWeight: "700" },
   athleteWorkout: { padding: 16, borderRadius: 22, backgroundColor: C.white, borderWidth: 1, borderColor: "#ECEDE6", gap: 10 },
   stepsCard: { padding: 12, borderRadius: 15, backgroundColor: C.paper, gap: 9, marginTop: 3 },
-  stepsTitle: { color: C.muted, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
   stepRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingBottom: 4 },
   stepDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5, backgroundColor: C.limeDeep },
   stepLabel: { color: C.ink, fontSize: 12, fontWeight: "900" },
   metricsInputRow: { flexDirection: "row", gap: 9 },
   metricInput: { flex: 1 },
-  inputCaption: { flex: 1, color: C.muted, fontSize: 10, fontWeight: "800", marginBottom: -4 },
 });

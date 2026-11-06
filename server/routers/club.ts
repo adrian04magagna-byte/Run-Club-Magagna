@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -12,6 +12,8 @@ import {
   workoutSteps,
   workouts,
 } from "../../drizzle/schema";
+import { athleteSummary } from "../../shared/club-athletes";
+import { addDays, paceSecondsPerKm, weeklyBuckets, type TrainingEntry } from "../../shared/insights";
 import { adminProcedure, athleteProcedure, router } from "../_core/trpc";
 import { getDb, isUniqueViolation } from "../db";
 import { getProfileAvatarUrl } from "../storage/profile-avatars";
@@ -75,6 +77,65 @@ async function requireAthleteLink(coachId: number, athleteId: number) {
   return db;
 }
 
+type Db = Awaited<ReturnType<typeof requireDb>>;
+
+/** Approved athletes of the whole club, whoever follows them. Coaches are not listed as athletes. */
+async function approvedAthletes(db: Db, athleteId?: number) {
+  const rows = await db.select({
+    userId: users.id,
+    name: users.name,
+    profileName: users.profileName,
+    avatarKey: users.avatarKey,
+    email: users.email,
+    createdAt: users.createdAt,
+    lastSignedIn: users.lastSignedIn,
+  })
+    .from(athleteAccounts)
+    .innerJoin(users, eq(athleteAccounts.userId, users.id))
+    .where(and(eq(athleteAccounts.status, "approved"), eq(users.role, "user"), athleteId ? eq(users.id, athleteId) : undefined))
+    .orderBy(users.name);
+  return Promise.all(rows.map(async ({ profileName, avatarKey, ...athlete }) => ({
+    ...athlete,
+    name: profileName || athlete.name,
+    avatarUrl: await getProfileAvatarUrl(athlete.userId, avatarKey),
+  })));
+}
+
+/** Who follows each athlete, the requesting coach first. */
+async function followersOf(db: Db, athleteIds: number[], coachId: number) {
+  const rows = athleteIds.length ? await db.select({
+    athleteId: coachAthletes.athleteId,
+    coachId: coachAthletes.coachId,
+    name: users.name,
+    profileName: users.profileName,
+    since: coachAthletes.approvedAt,
+  })
+    .from(coachAthletes)
+    .innerJoin(users, eq(coachAthletes.coachId, users.id))
+    .where(inArray(coachAthletes.athleteId, athleteIds))
+    .orderBy(coachAthletes.approvedAt) : [];
+  const byAthlete = new Map<number, { id: number; name: string; isMe: boolean; since: Date }[]>();
+  for (const row of rows) {
+    const list = byAthlete.get(row.athleteId) ?? [];
+    list.push({ id: row.coachId, name: row.profileName || row.name || "Treinador", isMe: row.coachId === coachId, since: row.since });
+    byAthlete.set(row.athleteId, list.sort((a, b) => Number(b.isMe) - Number(a.isMe)));
+  }
+  return byAthlete;
+}
+
+/** Runs the athlete shared with the club. Strava stays private to the athlete. */
+async function sharedRuns(db: Db, athleteIds: number[]) {
+  if (!athleteIds.length) return [];
+  return db.select({ activity: activities, review: activityReviews, reviewerName: users.name, reviewerProfileName: users.profileName })
+    .from(activities)
+    .leftJoin(activityReviews, eq(activityReviews.activityId, activities.id))
+    .leftJoin(users, eq(users.id, activityReviews.coachId))
+    .where(and(inArray(activities.athleteId, athleteIds), eq(activities.source, "manual"), eq(activities.shareWithCoach, true)))
+    .orderBy(desc(activities.completedAt));
+}
+
+const runDate = (completedAt: Date) => completedAt.toISOString().slice(0, 10);
+
 export const clubRouter = router({
   pendingAthletes: adminProcedure.query(async () => {
     const db = await requireDb();
@@ -111,6 +172,124 @@ export const clubRouter = router({
       name: profileName || athlete.name,
       avatarUrl: await getProfileAvatarUrl(athlete.userId, avatarKey),
     })));
+  }),
+
+  /** Everyone in the club with their week at a glance, so any coach can see any athlete. */
+  clubAthletes: adminProcedure.input(z.object({ today: scheduledDateInput })).query(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const athletes = await approvedAthletes(db);
+    const ids = athletes.map((athlete) => athlete.userId);
+    const [followers, runs, sends] = await Promise.all([
+      followersOf(db, ids, ctx.user.id),
+      sharedRuns(db, ids),
+      ids.length ? db.select({ athleteId: workoutAssignments.athleteId, scheduledDate: workoutAssignments.scheduledDate, status: workoutAssignments.status })
+        .from(workoutAssignments)
+        .where(and(
+          inArray(workoutAssignments.athleteId, ids),
+          or(gte(workoutAssignments.scheduledDate, addDays(input.today, -56)), eq(workoutAssignments.status, "assigned")),
+        )) : [],
+    ]);
+    return athletes.map(({ createdAt, lastSignedIn, ...athlete }) => {
+      const coaches = followers.get(athlete.userId) ?? [];
+      return {
+        ...athlete,
+        coaches: coaches.map(({ id, name, isMe }) => ({ id, name, isMe })),
+        followedByMe: coaches.some((coach) => coach.isMe),
+        summary: athleteSummary(
+          sends.filter((send) => send.athleteId === athlete.userId),
+          runs.filter((run) => run.activity.athleteId === athlete.userId).map((run) => ({
+            date: runDate(run.activity.completedAt),
+            distanceMeters: run.activity.distanceMeters,
+            reviewed: Boolean(run.review),
+          })),
+          input.today,
+        ),
+      };
+    });
+  }),
+
+  /** One athlete in full: who follows them, every send, every shared run and how it is going. */
+  athleteDetail: adminProcedure.input(z.object({ athleteId: z.number().int().positive(), today: scheduledDateInput })).query(async ({ ctx, input }) => {
+    const db = await requireDb();
+    const athlete = (await approvedAthletes(db, input.athleteId))[0];
+    if (!athlete) throw new TRPCError({ code: "NOT_FOUND", message: "Aluno não encontrado." });
+    const [followers, runs, sends] = await Promise.all([
+      followersOf(db, [athlete.userId], ctx.user.id),
+      sharedRuns(db, [athlete.userId]),
+      db.select({
+        id: workoutAssignments.id,
+        scheduledDate: workoutAssignments.scheduledDate,
+        status: workoutAssignments.status,
+        completedAt: workoutAssignments.completedAt,
+        coachId: workoutAssignments.coachId,
+        title: workouts.title,
+        objective: workouts.objective,
+        coachName: users.name,
+        coachProfileName: users.profileName,
+      })
+        .from(workoutAssignments)
+        .innerJoin(workouts, eq(workouts.id, workoutAssignments.workoutId))
+        .innerJoin(users, eq(users.id, workoutAssignments.coachId))
+        .where(eq(workoutAssignments.athleteId, athlete.userId))
+        .orderBy(desc(workoutAssignments.scheduledDate)),
+    ]);
+    const entries: TrainingEntry[] = runs.map(({ activity }) => ({
+      id: String(activity.id),
+      source: "club",
+      title: activity.title,
+      date: runDate(activity.completedAt),
+      startLocal: null,
+      distanceMeters: activity.distanceMeters,
+      movingSeconds: activity.durationSeconds,
+      elevationMeters: 0,
+      averageHeartRate: null,
+    }));
+    const distanceMeters = runs.reduce((sum, { activity }) => sum + activity.distanceMeters, 0);
+    const durationSeconds = runs.reduce((sum, { activity }) => sum + activity.durationSeconds, 0);
+    const ratings = runs.flatMap(({ review }) => (review ? [review.rating] : []));
+    const effortCount = (effort: "easy" | "challenging" | "intense") => runs.filter(({ activity }) => activity.perceivedEffort === effort).length;
+    const coaches = followers.get(athlete.userId) ?? [];
+    return {
+      athlete: { ...athlete, coaches, followedByMe: coaches.some((coach) => coach.isMe) },
+      summary: athleteSummary(
+        sends,
+        entries.map((entry, index) => ({ date: entry.date, distanceMeters: entry.distanceMeters, reviewed: Boolean(runs[index].review) })),
+        input.today,
+      ),
+      totals: {
+        runs: runs.length,
+        distanceMeters,
+        durationSeconds,
+        paceSecondsPerKm: paceSecondsPerKm(distanceMeters, durationSeconds),
+        longestRunMeters: Math.max(0, ...runs.map(({ activity }) => activity.distanceMeters)),
+        averageRating: ratings.length ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length : null,
+        efforts: { easy: effortCount("easy"), challenging: effortCount("challenging"), intense: effortCount("intense") },
+      },
+      weeks: weeklyBuckets(entries, input.today, 8),
+      assignments: sends.map(({ coachName, coachProfileName, ...send }) => ({
+        ...send,
+        coachName: coachProfileName || coachName || "Treinador",
+        mine: send.coachId === ctx.user.id,
+      })),
+      activities: runs.map(({ activity, review, reviewerName, reviewerProfileName }) => ({
+        activity,
+        review: review ? { ...review, coachName: reviewerProfileName || reviewerName || "Treinador", mine: review.coachId === ctx.user.id } : null,
+      })),
+    };
+  }),
+
+  followAthlete: adminProcedure.input(z.object({ athleteId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    if (!(await approvedAthletes(db, input.athleteId)).length) throw new TRPCError({ code: "NOT_FOUND", message: "Aluno não encontrado." });
+    await db.insert(coachAthletes).values({ coachId: ctx.user.id, athleteId: input.athleteId }).onConflictDoNothing();
+    return { success: true };
+  }),
+
+  /** Stops following; the coach's sends stay on the athlete's agenda and the history is kept. */
+  unfollowAthlete: adminProcedure.input(z.object({ athleteId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDb();
+    await db.delete(coachAthletes).where(and(eq(coachAthletes.coachId, ctx.user.id), eq(coachAthletes.athleteId, input.athleteId)));
+    return { success: true };
   }),
 
   approveAthlete: adminProcedure.input(z.object({ athleteId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {

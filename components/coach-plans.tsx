@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { CoachAiCard } from "@/components/coach-ai-card";
@@ -32,36 +33,56 @@ export function CoachPlans() {
   const [draft, setDraft] = useState<WorkoutDraft>(emptyWorkoutDraft());
   const [sendDate, setSendDate] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [target, setTarget] = useState<number | null>(null);
+  const [targetDate, setTargetDate] = useState(today);
+  const { novoPara } = useLocalSearchParams<{ novoPara?: string }>();
+  const [handledRequest, setHandledRequest] = useState<string | undefined>();
+  const router = useRouter();
 
   const athletes = trpc.club.athletes.useQuery();
   const workouts = trpc.club.workouts.useQuery();
   const agenda = trpc.club.coachAssignments.useQuery({ from: weekFrom, to: addDays(weekFrom, 6) });
-  const refresh = () => Promise.all([utils.club.workouts.invalidate(), utils.club.coachAssignments.invalidate(), utils.club.athletes.invalidate()]);
+  const refresh = () => Promise.all([utils.club.workouts.invalidate(), utils.club.coachAssignments.invalidate(), utils.club.athletes.invalidate(), utils.club.clubAthletes.invalidate(), utils.club.athleteDetail.invalidate()]);
   const createWorkout = trpc.club.createWorkout.useMutation({ onSuccess: refresh });
+  const createAndAssign = trpc.club.createAndAssignWorkout.useMutation({ onSuccess: refresh });
   const updateWorkout = trpc.club.updateWorkout.useMutation({ onSuccess: refresh });
 
-  const openEditor = (next: Editing, value: WorkoutDraft) => {
+  const openEditor = (next: Editing, value: WorkoutDraft, athleteId: number | null = null) => {
     setNotice("");
     setDraft(value);
+    setTarget(athleteId);
+    setTargetDate(today);
     setEditing(next);
   };
+
+  // The athlete sheet opens the editor already aimed at that athlete; the link is then cleared so it can be used again.
+  if (novoPara !== handledRequest) {
+    setHandledRequest(novoPara);
+    if (novoPara) openEditor({ mode: "new" }, emptyWorkoutDraft(), Number(novoPara));
+  }
+  useEffect(() => {
+    if (novoPara) router.setParams({ novoPara: undefined });
+  }, [novoPara, router]);
 
   const save = async () => {
     setNotice("");
     try {
       const input = workoutInputFrom(draft);
       if (editing?.mode === "edit") await updateWorkout.mutateAsync({ ...input, workoutId: editing.workoutId });
+      else if (target) await createAndAssign.mutateAsync({ ...input, athleteId: target, scheduledDate: targetDate });
       else await createWorkout.mutateAsync(input);
       setEditing(null);
-      setTab("library");
-      setNotice(editing?.mode === "edit" ? "Treino atualizado." : "Treino salvo na biblioteca.");
+      setTab(target && editing?.mode === "new" ? "agenda" : "library");
+      if (target && editing?.mode === "new") setWeekFrom(startOfWeek(targetDate));
+      setNotice(editing?.mode === "edit" ? "Treino atualizado." : target ? `Treino salvo e enviado para ${formatDay(targetDate)}.` : "Treino salvo na biblioteca.");
     } catch (error) {
       setNotice(errorText(error, "Não foi possível salvar o treino."));
     }
   };
 
   if (editing) {
-    const saving = createWorkout.isPending || updateWorkout.isPending;
+    const saving = createWorkout.isPending || createAndAssign.isPending || updateWorkout.isPending;
+    const chosen = athletes.data?.find((athlete) => athlete.userId === target) ?? null;
     return (
       <Screen scroll>
         <Pressable onPress={() => { setEditing(null); setNotice(""); }} style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
@@ -69,7 +90,7 @@ export function CoachPlans() {
           <Text style={styles.backText}>Voltar sem salvar</Text>
         </Pressable>
         <AppHeader eyebrow="BIBLIOTECA" title={editing.mode === "edit" ? "Editar treino" : "Novo treino"} />
-        {editing.mode === "new" ? <CoachAiCard athleteId={null} athleteName={null} date={today} onApply={(workout) => setDraft(draftFromAi(workout))} /> : null}
+        {editing.mode === "new" ? <CoachAiCard athleteId={target} athleteName={chosen ? chosen.name || chosen.email : null} date={targetDate} onApply={(workout, date) => { setDraft(draftFromAi(workout)); setTargetDate(date); }} /> : null}
         {editing.mode === "edit" && editing.pendingCount ? (
           <View style={styles.warning}>
             <Ionicons name="information-circle" size={18} color={C.ink} />
@@ -77,10 +98,28 @@ export function CoachPlans() {
           </View>
         ) : null}
         <View style={styles.card}><WorkoutEditor value={draft} onChange={setDraft} /></View>
+        {editing.mode === "new" && athletes.data?.length ? (
+          <View style={[styles.card, styles.target]}>
+            <Text style={styles.label}>Enviar para (opcional)</Text>
+            <Text style={styles.muted}>Sem aluno, o treino fica só na biblioteca.</Text>
+            <View style={styles.chips}>
+              {athletes.data.map((athlete) => (
+                <Pressable key={athlete.userId} onPress={() => setTarget(target === athlete.userId ? null : athlete.userId)} style={[styles.athleteChip, target === athlete.userId && styles.chipOn]}>
+                  <ProfileAvatar uri={athlete.avatarUrl} name={athlete.name || athlete.email} size={22} />
+                  <Text style={[styles.chipText, target === athlete.userId && styles.chipTextOn]}>{athlete.name || athlete.email}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {target ? <>
+              <Text style={styles.label}>Quando</Text>
+              <DayPicker key={targetDate} today={today} initialWeek={startOfWeek(targetDate)} value={targetDate} onPick={setTargetDate} />
+            </> : null}
+          </View>
+        ) : null}
         {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
         <Pressable disabled={saving} onPress={save} style={({ pressed }) => [styles.primary, saving && styles.disabled, pressed && styles.pressed]}>
           {saving ? <ActivityIndicator color={C.ink} /> : <Ionicons name="checkmark" size={18} color={C.ink} />}
-          <Text style={styles.primaryText}>{editing.mode === "edit" ? "Salvar alterações" : "Salvar na biblioteca"}</Text>
+          <Text style={styles.primaryText}>{editing.mode === "edit" ? "Salvar alterações" : chosen ? `Salvar e enviar para ${formatDay(targetDate)}` : "Salvar na biblioteca"}</Text>
         </Pressable>
       </Screen>
     );
@@ -351,7 +390,7 @@ function Library({ today, sendDate, athletes, workouts, loading, onEdit, onNotic
                       </Pressable>
                     ))}
                   </View>
-                ) : <Text style={styles.muted}>Aprove um aluno no Clube para enviar treinos.</Text>}
+                ) : <Text style={styles.muted}>Acompanhe um aluno na aba Alunos para enviar treinos.</Text>}
                 <Text style={styles.label}>Quando</Text>
                 <DayPicker today={today} initialWeek={startOfWeek(date)} value={date} onPick={setDate} />
                 <Pressable disabled={assign.isPending || !athletes.length} onPress={() => send(workout.id)} style={({ pressed }) => [styles.primary, (assign.isPending || !athletes.length) && styles.disabled, pressed && styles.pressed]}>
@@ -384,7 +423,7 @@ function WeekNav({ weekFrom, today, onChange }: { weekFrom: string; today: strin
 }
 
 /** Pick a day by tapping it in a Monday-to-Sunday strip; arrows walk weeks. Past days are off. */
-function DayPicker({ today, initialWeek, value, onPick }: { today: string; initialWeek: string; value: string; onPick: (date: string) => void }) {
+export function DayPicker({ today, initialWeek, value, onPick }: { today: string; initialWeek: string; value: string; onPick: (date: string) => void }) {
   const [week, setWeek] = useState(initialWeek);
   return (
     <View style={styles.picker}>
@@ -437,6 +476,7 @@ const styles = StyleSheet.create({
   newText: { color: C.ink, fontSize: 13, fontWeight: "900" },
   back: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingVertical: 8, marginBottom: 6 },
   backText: { color: C.ink, fontSize: 13, fontWeight: "800" },
+  target: { gap: 8, marginTop: 12 },
   card: { padding: 16, borderRadius: 22, backgroundColor: C.white, borderWidth: 1, borderColor: "#ECEDE6" },
   warning: { flexDirection: "row", gap: 8, alignItems: "center", padding: 12, borderRadius: 14, backgroundColor: C.sand, marginBottom: 12 },
   warningText: { flex: 1, color: C.ink, fontSize: 12, fontWeight: "700", lineHeight: 17 },

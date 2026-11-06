@@ -8,7 +8,7 @@ import { trpc } from "@/lib/trpc";
 import type { AiWeekDay, AiWorkout } from "@/shared/coach-ai";
 
 /**
- * The coach's AI helper on "Criar treino": drafts the next workout or a Monday-to-Sunday week from
+ * The coach's AI helper on "Novo treino": drafts the next workout or a Monday-to-Sunday week from
  * the athlete's club history. Nothing is sent to the athlete here; a draft only fills the form.
  */
 export function CoachAiCard({ athleteId, athleteName, date, onApply }: {
@@ -59,7 +59,7 @@ export function CoachAiCard({ athleteId, athleteName, date, onApply }: {
     <View style={styles.card}>
       <Header />
       <Text style={styles.text}>
-        {athleteName ? `Usa o histórico de ${athleteName} no clube e a sua biblioteca como estilo.` : "Sem aluno escolhido: a IA monta um treino genérico. Escolha o aluno no passo 2 para personalizar."}
+        {athleteName ? `Usa o histórico de ${athleteName} no clube e a sua biblioteca como estilo.` : "Sem aluno escolhido: a IA monta um treino genérico. Escolha o aluno abaixo para personalizar."}
       </Text>
       <TextInput
         value={focus}

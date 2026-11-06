@@ -22,6 +22,7 @@ const tinyJpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, ...new Array(20).fill(0), 
 describe("coach and athlete flow", () => {
   let coachToken = "";
   let athleteToken = "";
+  let secondCoachToken = "";
   let athleteId = 0;
 
   beforeAll(async () => {
@@ -62,6 +63,7 @@ describe("coach and athlete flow", () => {
     expect(result.status).toBe("authenticated");
     if (result.status !== "authenticated") return;
     expect(result.user.role).toBe("admin");
+    secondCoachToken = result.sessionToken;
   });
 
   it("lets the coach approve, plan, and review", async () => {
@@ -107,9 +109,42 @@ describe("coach and athlete flow", () => {
     expect(activities[0].review?.rating).toBe(4);
   });
 
+  it("shows every athlete to every coach and tracks who follows them", async () => {
+    const today = "2026-11-12";
+    const coach = await callerFor(coachToken);
+    const second = await callerFor(secondCoachToken);
+
+    const [seen] = await second.club.clubAthletes({ today });
+    expect(seen).toMatchObject({ userId: athleteId, followedByMe: false });
+    expect(seen.coaches.map((item) => item.name)).toEqual(["Coach"]);
+    expect(seen.summary).toMatchObject({ weekPlanned: 1, weekDone: 1, weekDistanceMeters: 0, toReview: 0 });
+
+    await expect(second.club.athleteDetail({ athleteId, today })).resolves.toMatchObject({
+      athlete: { followedByMe: false },
+      totals: { runs: 1, distanceMeters: 5000 },
+    });
+    await expect(second.club.createAndAssignWorkout({
+      athleteId, scheduledDate: "2026-11-13", title: "Fora da lista", objective: "Teste", level: "Todos",
+      steps: [{ kind: "run", label: "Corrida", durationSeconds: 600 }],
+    })).rejects.toThrow(/lista aprovada/);
+
+    await second.club.followAthlete({ athleteId });
+    await second.club.followAthlete({ athleteId });
+    const following = await second.club.clubAthletes({ today });
+    expect(following[0].followedByMe).toBe(true);
+    expect(following[0].coaches.map((item) => [item.name, item.isMe])).toEqual([["Coach 2", true], ["Coach", false]]);
+
+    await second.club.unfollowAthlete({ athleteId });
+    const after = await coach.club.clubAthletes({ today });
+    expect(after[0].coaches.map((item) => item.name)).toEqual(["Coach"]);
+    expect(after.some((item) => item.email?.includes("coach"))).toBe(false);
+  });
+
   it("keeps athletes out of coach routes", async () => {
     const athlete = await callerFor(athleteToken);
     await expect(athlete.club.pendingAthletes()).rejects.toThrow();
+    await expect(athlete.club.clubAthletes({ today: "2026-11-12" })).rejects.toThrow();
+    await expect(athlete.club.followAthlete({ athleteId })).rejects.toThrow();
     const anonymous = await callerFor("not-a-token");
     await expect(anonymous.club.myAssignments()).rejects.toThrow();
   });
