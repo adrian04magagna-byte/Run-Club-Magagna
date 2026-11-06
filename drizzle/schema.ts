@@ -3,6 +3,7 @@ import {
   customType,
   date,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   serial,
@@ -11,6 +12,8 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
+
+import type { StravaActivityStreams, StravaActivitySummary } from "../shared/strava";
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => "bytea",
@@ -176,12 +179,28 @@ export const stravaConnections = pgTable(
     tokenExpiresAt: timestamp("tokenExpiresAt", { withTimezone: true }).notNull(),
     consentedAt: timestamp("consentedAt", { withTimezone: true }).notNull(),
     consentVersion: varchar("consentVersion", { length: 32 }).notNull(),
+    historyConsentAt: timestamp("historyConsentAt", { withTimezone: true }),
     connectedAt: timestamp("connectedAt", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("strava_connections_user_unique").on(table.userId),
     uniqueIndex("strava_connections_athlete_hash_unique").on(table.stravaAthleteHash),
   ],
+);
+
+/** Test copy of a member's Strava runs, saved with their consent and deleted on disconnect. */
+export const stravaActivityRecords = pgTable(
+  "strava_activity_records",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    stravaActivityId: varchar("stravaActivityId", { length: 32 }).notNull(),
+    startDate: timestamp("startDate", { withTimezone: true }).notNull(),
+    summary: jsonb("summary").$type<StravaActivitySummary>().notNull(),
+    streams: jsonb("streams").$type<StravaActivityStreams>(),
+    savedAt: timestamp("savedAt", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("strava_activity_records_user_activity_unique").on(table.userId, table.stravaActivityId)],
 );
 
 /** Short-lived single-use OAuth state bound to the initiating approved athlete. */

@@ -378,10 +378,11 @@ function StravaHome() {
             <Text style={styles.connectedDate}>{status.data.connectedAt ? `Desde ${formatDate(status.data.connectedAt)}` : "Conta vinculada"}</Text>
           </View>
           <Text style={styles.connectionTitle}>Sua conta está conectada</Text>
-          <Text style={styles.connectionCopy}>Cada atualização consulta o Strava ao vivo. O app não grava as atividades nem as métricas no banco do Clube. Para excluir os dados da integração no Run Club, use “Desconectar e revogar acesso”; isso remove tokens, hash, escopos e estados OAuth locais. Para também retirar a autorização na Strava, remova Run Club Magagna em strava.com/settings/apps.</Text>
+          <Text style={styles.connectionCopy}>Cada atualização consulta o Strava ao vivo. Suas corridas só ficam guardadas no banco do Clube se você autorizar abaixo. Para excluir os dados da integração no Run Club, use “Desconectar e revogar acesso”; isso remove tokens, hash, escopos e estados OAuth locais. Para também retirar a autorização na Strava, remova Run Club Magagna em strava.com/settings/apps.</Text>
           <Pressable disabled={disconnect.isPending} onPress={disconnectAccount} style={({ pressed }) => [styles.disconnectButton, disconnect.isPending && styles.disabled, pressed && styles.pressed]}>
             {disconnect.isPending ? <ActivityIndicator color={C.ink} /> : <Text style={styles.disconnectText}>Desconectar e revogar acesso</Text>}
           </Pressable>
+          <StravaHistoryTest />
         </View>
       ) : status.data?.configured ? (
         <View style={styles.connectionCard}>
@@ -493,7 +494,39 @@ export default function StravaScreen() {
   return <MemberGate><StravaHome /></MemberGate>;
 }
 
+/** Test: with the member's own consent, copies their runs to the club database for later calculations. */
+function StravaHistoryTest() {
+  const [accepted, setAccepted] = useState(false);
+  const history = trpc.strava.historyStatus.useQuery();
+  const save = trpc.strava.saveHistory.useMutation({ onSuccess: () => history.refetch() });
+  const remove = trpc.strava.deleteHistory.useMutation({ onSuccess: () => { setAccepted(false); return history.refetch(); } });
+  const consented = history.data?.consented ?? false;
+  const saved = history.data?.saved ?? 0;
+  const busy = save.isPending || remove.isPending;
+  const blocked = busy || (!consented && !accepted);
+  return <View style={styles.historyBox}>
+    <Text style={styles.connectionTitle}>Guardar minhas corridas (teste)</Text>
+    <Text style={styles.connectionCopy}>Com sua autorização, o Run Club guarda data, distância, tempo, ritmo, elevação e, quando houver, frequência cardíaca e cadência das suas corridas, sem o mapa. Esses dados serão usados em testes de análise de treino. Você pode apagar tudo quando quiser.</Text>
+    {consented
+      ? <Text style={styles.connectionCopy}>{saved} corridas salvas, {history.data?.withStreams ?? 0} com métricas detalhadas. Cada envio busca métricas de mais 10 corridas.</Text>
+      : <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted }} onPress={() => setAccepted((checked) => !checked)} style={styles.historyConsent}>
+        <View style={[styles.checkbox, accepted && styles.checkboxChecked]}>{accepted ? <Text style={styles.checkmark}>✓</Text> : null}</View>
+        <Text style={styles.historyConsentText}>Autorizo guardar minhas corridas para esses testes.</Text>
+      </Pressable>}
+    {save.error ? <Text style={styles.errorText}>{save.error.message}</Text> : null}
+    <Pressable disabled={blocked} onPress={() => save.mutate({ consentAccepted: accepted })} style={({ pressed }) => [styles.disconnectButton, blocked && styles.disabled, pressed && styles.pressed]}>
+      {save.isPending ? <ActivityIndicator color={C.ink} /> : <Text style={styles.disconnectText}>{consented ? "Atualizar minhas corridas" : "Guardar minhas corridas"}</Text>}
+    </Pressable>
+    {consented ? <Pressable disabled={busy} onPress={() => remove.mutate()} style={({ pressed }) => [styles.disconnectButton, busy && styles.disabled, pressed && styles.pressed]}>
+      <Text style={styles.disconnectText}>Apagar tudo e retirar autorização</Text>
+    </Pressable> : null}
+  </View>;
+}
+
 const styles = StyleSheet.create({
+  historyConsent: { flexDirection: "row", alignItems: "center", gap: 10 },
+  historyConsentText: { flex: 1, color: C.ink, fontSize: 12, lineHeight: 17, fontWeight: "700" },
+  historyBox: { gap: 10, marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: C.line },
   header: { marginBottom: 20 },
   eyebrow: { color: C.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.55, marginBottom: 6 },
   title: { color: C.ink, fontSize: 32, fontWeight: "900", letterSpacing: -1.1 },

@@ -9,7 +9,7 @@ import { and, eq, lt } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import type { Express, Request, Response as ExpressResponse } from "express";
 
-import { stravaConnections, stravaOAuthStates } from "../../drizzle/schema";
+import { stravaActivityRecords, stravaConnections, stravaOAuthStates } from "../../drizzle/schema";
 import {
   RUN_CLUB_APP_SCHEME,
   STRAVA_CALLBACK_PATH as STRAVA_CLIENT_CALLBACK_PATH,
@@ -506,6 +506,7 @@ async function requestStravaApi(userId: number, path: string, query?: URLSearchP
   if (response.status === 401) {
     const db = await requireDb();
     await db.delete(stravaConnections).where(eq(stravaConnections.userId, userId));
+    await db.delete(stravaActivityRecords).where(eq(stravaActivityRecords.userId, userId));
     throw trpcError("PRECONDITION_FAILED", "A autorização Strava foi revogada ou expirou. Conecte novamente para consultar suas atividades.");
   }
   if (response.status === 429) throw trpcError("TOO_MANY_REQUESTS", "O limite de consultas do Strava foi atingido. Aguarde um pouco e tente novamente.");
@@ -642,6 +643,7 @@ export async function getStravaActivityStreams(userId: number, activityId: strin
 
 export async function disconnectStrava(userId: number) {
   const db = await requireDb();
+  await db.delete(stravaActivityRecords).where(eq(stravaActivityRecords.userId, userId));
   const rows = await db.select().from(stravaConnections).where(eq(stravaConnections.userId, userId)).limit(1);
   const connection = rows[0];
   if (!connection) return { disconnected: true as const, remoteRevoked: true };
