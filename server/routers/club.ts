@@ -7,6 +7,7 @@ import {
   activityReviews,
   athleteAccounts,
   coachAthletes,
+  stravaConnections,
   users,
   workoutAssignments,
   workoutSteps,
@@ -14,7 +15,9 @@ import {
 } from "../../drizzle/schema";
 import { athleteSummary } from "../../shared/club-athletes";
 import { addDays, paceSecondsPerKm, weeklyBuckets, type TrainingEntry } from "../../shared/insights";
+import { getStravaConnectionStatus } from "../_core/stravaOAuth";
 import { adminProcedure, athleteProcedure, router } from "../_core/trpc";
+import { ALL_TIME_MAX_PAGES, stravaRunEntries } from "./insights";
 import { getDb, isUniqueViolation } from "../db";
 import { getProfileAvatarUrl } from "../storage/profile-avatars";
 
@@ -79,8 +82,34 @@ async function requireAthleteLink(coachId: number, athleteId: number) {
 
 type Db = Awaited<ReturnType<typeof requireDb>>;
 
-/** Approved athletes of the whole club, whoever follows them. Coaches are not listed as athletes. */
-async function approvedAthletes(db: Db, athleteId?: number) {
+/**
+ * The coach's own place in the athlete list: their student profile when one shares their Strava
+ * login, otherwise the coach account itself.
+ */
+async function ownAthleteId(db: Db, coachId: number) {
+  const [own] = await db.select({ hash: stravaConnections.stravaAthleteHash }).from(stravaConnections)
+    .where(eq(stravaConnections.userId, coachId)).limit(1);
+  if (!own) return coachId;
+  const [student] = await db.select({ id: users.id }).from(stravaConnections)
+    .innerJoin(users, eq(stravaConnections.userId, users.id))
+    .innerJoin(athleteAccounts, eq(athleteAccounts.userId, users.id))
+    .where(and(eq(stravaConnections.stravaAthleteHash, own.hash), eq(users.role, "user"), eq(athleteAccounts.status, "approved")))
+    .limit(1);
+  return student?.id ?? coachId;
+}
+
+/** A coach reading their own runs. Strava data of anyone else stays private to them. */
+async function ownStravaRuns(coachId: number) {
+  if (!(await getStravaConnectionStatus(coachId)).connected) return { entries: [] as TrainingEntry[], status: "off" as const };
+  try {
+    return { entries: (await stravaRunEntries(coachId, 0, ALL_TIME_MAX_PAGES)).entries, status: "ok" as const };
+  } catch {
+    return { entries: [] as TrainingEntry[], status: "failed" as const };
+  }
+}
+
+/** Approved athletes of the whole club, whoever follows them, plus the requesting coach when given. */
+async function approvedAthletes(db: Db, athleteId?: number, ownId?: number) {
   const rows = await db.select({
     userId: users.id,
     name: users.name,
@@ -90,9 +119,12 @@ async function approvedAthletes(db: Db, athleteId?: number) {
     createdAt: users.createdAt,
     lastSignedIn: users.lastSignedIn,
   })
-    .from(athleteAccounts)
-    .innerJoin(users, eq(athleteAccounts.userId, users.id))
-    .where(and(eq(athleteAccounts.status, "approved"), eq(users.role, "user"), athleteId ? eq(users.id, athleteId) : undefined))
+    .from(users)
+    .leftJoin(athleteAccounts, eq(athleteAccounts.userId, users.id))
+    .where(and(
+      or(and(eq(athleteAccounts.status, "approved"), eq(users.role, "user")), ownId ? eq(users.id, ownId) : undefined),
+      athleteId ? eq(users.id, athleteId) : undefined,
+    ))
     .orderBy(users.name);
   return Promise.all(rows.map(async ({ profileName, avatarKey, ...athlete }) => ({
     ...athlete,
@@ -177,11 +209,13 @@ export const clubRouter = router({
   /** Everyone in the club with their week at a glance, so any coach can see any athlete. */
   clubAthletes: adminProcedure.input(z.object({ today: scheduledDateInput })).query(async ({ ctx, input }) => {
     const db = await requireDb();
-    const athletes = await approvedAthletes(db);
+    const ownId = await ownAthleteId(db, ctx.user.id);
+    const athletes = await approvedAthletes(db, undefined, ownId);
     const ids = athletes.map((athlete) => athlete.userId);
-    const [followers, runs, sends] = await Promise.all([
+    const [followers, runs, own, sends] = await Promise.all([
       followersOf(db, ids, ctx.user.id),
       sharedRuns(db, ids),
+      ownStravaRuns(ctx.user.id),
       ids.length ? db.select({ athleteId: workoutAssignments.athleteId, scheduledDate: workoutAssignments.scheduledDate, status: workoutAssignments.status })
         .from(workoutAssignments)
         .where(and(
@@ -193,15 +227,20 @@ export const clubRouter = router({
       const coaches = followers.get(athlete.userId) ?? [];
       return {
         ...athlete,
+        isMe: athlete.userId === ownId,
+        isCoachAccount: athlete.userId === ctx.user.id,
         coaches: coaches.map(({ id, name, isMe }) => ({ id, name, isMe })),
         followedByMe: coaches.some((coach) => coach.isMe),
         summary: athleteSummary(
           sends.filter((send) => send.athleteId === athlete.userId),
-          runs.filter((run) => run.activity.athleteId === athlete.userId).map((run) => ({
-            date: runDate(run.activity.completedAt),
-            distanceMeters: run.activity.distanceMeters,
-            reviewed: Boolean(run.review),
-          })),
+          [
+            ...runs.filter((run) => run.activity.athleteId === athlete.userId).map((run) => ({
+              date: runDate(run.activity.completedAt),
+              distanceMeters: run.activity.distanceMeters,
+              reviewed: Boolean(run.review),
+            })),
+            ...(athlete.userId === ownId ? own.entries.map(({ date, distanceMeters }) => ({ date, distanceMeters, reviewed: true })) : []),
+          ],
           input.today,
         ),
       };
@@ -211,11 +250,14 @@ export const clubRouter = router({
   /** One athlete in full: who follows them, every send, every shared run and how it is going. */
   athleteDetail: adminProcedure.input(z.object({ athleteId: z.number().int().positive(), today: scheduledDateInput })).query(async ({ ctx, input }) => {
     const db = await requireDb();
-    const athlete = (await approvedAthletes(db, input.athleteId))[0];
+    const ownId = await ownAthleteId(db, ctx.user.id);
+    const athlete = (await approvedAthletes(db, input.athleteId, ownId))[0];
     if (!athlete) throw new TRPCError({ code: "NOT_FOUND", message: "Aluno não encontrado." });
-    const [followers, runs, sends] = await Promise.all([
+    const isMe = athlete.userId === ownId;
+    const [followers, runs, own, sends] = await Promise.all([
       followersOf(db, [athlete.userId], ctx.user.id),
       sharedRuns(db, [athlete.userId]),
+      isMe ? ownStravaRuns(ctx.user.id) : { entries: [] as TrainingEntry[], status: "off" as const },
       db.select({
         id: workoutAssignments.id,
         scheduledDate: workoutAssignments.scheduledDate,
@@ -244,28 +286,33 @@ export const clubRouter = router({
       elevationMeters: 0,
       averageHeartRate: null,
     }));
-    const distanceMeters = runs.reduce((sum, { activity }) => sum + activity.distanceMeters, 0);
-    const durationSeconds = runs.reduce((sum, { activity }) => sum + activity.durationSeconds, 0);
+    const allEntries = [...entries, ...own.entries];
+    const distanceMeters = allEntries.reduce((sum, entry) => sum + entry.distanceMeters, 0);
+    const durationSeconds = allEntries.reduce((sum, entry) => sum + entry.movingSeconds, 0);
     const ratings = runs.flatMap(({ review }) => (review ? [review.rating] : []));
     const effortCount = (effort: "easy" | "challenging" | "intense") => runs.filter(({ activity }) => activity.perceivedEffort === effort).length;
     const coaches = followers.get(athlete.userId) ?? [];
     return {
-      athlete: { ...athlete, coaches, followedByMe: coaches.some((coach) => coach.isMe) },
+      athlete: { ...athlete, isMe, isCoachAccount: athlete.userId === ctx.user.id, coaches, followedByMe: coaches.some((coach) => coach.isMe) },
       summary: athleteSummary(
         sends,
-        entries.map((entry, index) => ({ date: entry.date, distanceMeters: entry.distanceMeters, reviewed: Boolean(runs[index].review) })),
+        [
+          ...entries.map((entry, index) => ({ date: entry.date, distanceMeters: entry.distanceMeters, reviewed: Boolean(runs[index].review) })),
+          ...own.entries.map(({ date, distanceMeters }) => ({ date, distanceMeters, reviewed: true })),
+        ],
         input.today,
       ),
       totals: {
-        runs: runs.length,
+        runs: allEntries.length,
         distanceMeters,
         durationSeconds,
         paceSecondsPerKm: paceSecondsPerKm(distanceMeters, durationSeconds),
-        longestRunMeters: Math.max(0, ...runs.map(({ activity }) => activity.distanceMeters)),
+        longestRunMeters: Math.max(0, ...allEntries.map((entry) => entry.distanceMeters)),
         averageRating: ratings.length ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length : null,
         efforts: { easy: effortCount("easy"), challenging: effortCount("challenging"), intense: effortCount("intense") },
       },
-      weeks: weeklyBuckets(entries, input.today, 8),
+      weeks: weeklyBuckets(allEntries, input.today, 8),
+      strava: { status: own.status, runs: own.entries },
       assignments: sends.map(({ coachName, coachProfileName, ...send }) => ({
         ...send,
         coachName: coachProfileName || coachName || "Treinador",

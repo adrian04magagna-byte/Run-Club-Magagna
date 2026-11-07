@@ -42,9 +42,10 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: "Hoje", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "home" : "home-outline"} size={21} color={color} /> }} />
-      <Tabs.Screen name="progress" options={{ title: "Progresso", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "analytics" : "analytics-outline"} size={21} color={color} /> }} />
+      <Tabs.Screen name="progress" options={{ title: "Dados", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "analytics" : "analytics-outline"} size={21} color={color} /> }} />
+      <Tabs.Screen name="map" options={{ title: "Mapa", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "earth" : "earth-outline"} size={21} color={color} /> }} />
       <Tabs.Screen name="plans" options={{ title: "Planos", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "map" : "map-outline"} size={21} color={color} /> }} />
-      <Tabs.Screen name="club" options={{ title: user.role === "admin" ? "Alunos" : "Meu clube", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "people" : "people-outline"} size={21} color={color} /> }} />
+      <Tabs.Screen name="club" options={{ title: user.role === "admin" ? "Alunos" : "Clube", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "people" : "people-outline"} size={21} color={color} /> }} />
       <Tabs.Screen name="profile" options={{ title: "Perfil", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "person" : "person-outline"} size={21} color={color} /> }} />
     </Tabs>
   );

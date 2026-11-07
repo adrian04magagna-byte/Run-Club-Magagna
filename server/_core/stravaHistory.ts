@@ -1,9 +1,11 @@
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, isNull, max, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, isNull, max, sql } from "drizzle-orm";
 
 import { stravaActivityRecords, stravaConnections } from "../../drizzle/schema";
+import type { RunPlace } from "../../shared/brazil-map";
 import { getDb } from "../db";
-import { getStravaActivityStreams, listStravaActivitiesSince } from "./stravaOAuth";
+import { placesOnRoute } from "./municipalities";
+import { getStravaActivityStreams, listStravaRoutedActivities } from "./stravaOAuth";
 
 const HISTORY_PAGES = 5;
 // Each stream costs two Strava reads, so one save fills only a small batch.
@@ -39,10 +41,32 @@ export async function getStravaHistoryStatus(userId: number) {
   };
 }
 
+async function storeRuns(userId: number, withPlaces: boolean) {
+  const db = await requireDb();
+  const { items, truncated } = await listStravaRoutedActivities(userId, 0, HISTORY_PAGES);
+  const runs = items.filter((item) => RUN_TYPES.has(item.sportType) && !Number.isNaN(Date.parse(item.startDate)));
+  if (runs.length) {
+    await db
+      .insert(stravaActivityRecords)
+      .values(runs.map(({ routePolyline, ...summary }) => ({
+        userId,
+        stravaActivityId: summary.id,
+        startDate: new Date(summary.startDate),
+        summary,
+        places: withPlaces && routePolyline ? placesOnRoute(routePolyline, summary.distanceMeters) : null,
+      })))
+      .onConflictDoUpdate({
+        target: [stravaActivityRecords.userId, stravaActivityRecords.stravaActivityId],
+        set: { summary: sql`excluded."summary"`, startDate: sql`excluded."startDate"`, places: sql`excluded."places"`, savedAt: new Date() },
+      });
+  }
+  return { truncated };
+}
+
 export async function saveStravaHistory(userId: number, consentAccepted = false) {
   const db = await requireDb();
   const [connection] = await db
-    .select({ consentAt: stravaConnections.historyConsentAt })
+    .select({ consentAt: stravaConnections.historyConsentAt, mapConsentAt: stravaConnections.mapConsentAt })
     .from(stravaConnections)
     .where(eq(stravaConnections.userId, userId))
     .limit(1);
@@ -51,17 +75,7 @@ export async function saveStravaHistory(userId: number, consentAccepted = false)
     if (!consentAccepted) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Autorize guardar suas corridas antes de continuar." });
     await db.update(stravaConnections).set({ historyConsentAt: new Date() }).where(eq(stravaConnections.userId, userId));
   }
-  const { items, truncated } = await listStravaActivitiesSince(userId, 0, HISTORY_PAGES);
-  const runs = items.filter((item) => RUN_TYPES.has(item.sportType) && !Number.isNaN(Date.parse(item.startDate)));
-  if (runs.length) {
-    await db
-      .insert(stravaActivityRecords)
-      .values(runs.map((run) => ({ userId, stravaActivityId: run.id, startDate: new Date(run.startDate), summary: run })))
-      .onConflictDoUpdate({
-        target: [stravaActivityRecords.userId, stravaActivityRecords.stravaActivityId],
-        set: { summary: sql`excluded."summary"`, startDate: sql`excluded."startDate"`, savedAt: new Date() },
-      });
-  }
+  const { truncated } = await storeRuns(userId, Boolean(connection.mapConsentAt));
 
   const pending = await db
     .select({ activityId: stravaActivityRecords.stravaActivityId })
@@ -88,6 +102,48 @@ export async function saveStravaHistory(userId: number, consentAccepted = false)
 export async function deleteStravaHistory(userId: number) {
   const db = await requireDb();
   await db.delete(stravaActivityRecords).where(eq(stravaActivityRecords.userId, userId));
-  await db.update(stravaConnections).set({ historyConsentAt: null }).where(eq(stravaConnections.userId, userId));
+  await db.update(stravaConnections).set({ historyConsentAt: null, mapConsentAt: null }).where(eq(stravaConnections.userId, userId));
   return { deleted: true as const };
+}
+
+export async function getRunMap(userId: number) {
+  const db = await requireDb();
+  const [connection] = await db
+    .select({ consentAt: stravaConnections.mapConsentAt })
+    .from(stravaConnections)
+    .where(eq(stravaConnections.userId, userId))
+    .limit(1);
+  const rows = await db
+    .select({ places: stravaActivityRecords.places, startDate: stravaActivityRecords.startDate })
+    .from(stravaActivityRecords)
+    .where(and(eq(stravaActivityRecords.userId, userId), isNotNull(stravaActivityRecords.places)));
+  const totals = new Map<string, RunPlace>();
+  for (const { places, startDate } of rows) {
+    const date = startDate.toISOString().slice(0, 10);
+    for (const [code, meters] of Object.entries(places ?? {})) {
+      const place = totals.get(code) ?? { code, meters: 0, runs: 0, lastDate: date };
+      place.meters += meters;
+      place.runs += 1;
+      if (date > place.lastDate) place.lastDate = date;
+      totals.set(code, place);
+    }
+  }
+  return { connected: Boolean(connection), consented: Boolean(connection?.consentAt), places: [...totals.values()] };
+}
+
+export async function updateRunMap(userId: number, consentAccepted: boolean) {
+  const db = await requireDb();
+  const [connection] = await db
+    .select({ consentAt: stravaConnections.mapConsentAt })
+    .from(stravaConnections)
+    .where(eq(stravaConnections.userId, userId))
+    .limit(1);
+  if (!connection) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Conecte sua conta Strava primeiro." });
+  if (!connection.consentAt) {
+    if (!consentAccepted) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Autorize o mapa antes de continuar." });
+    const now = new Date();
+    await db.update(stravaConnections).set({ mapConsentAt: now, historyConsentAt: now }).where(eq(stravaConnections.userId, userId));
+  }
+  const { truncated } = await storeRuns(userId, true);
+  return { ...(await getRunMap(userId)), truncated };
 }

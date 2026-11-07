@@ -114,7 +114,8 @@ describe("coach and athlete flow", () => {
     const coach = await callerFor(coachToken);
     const second = await callerFor(secondCoachToken);
 
-    const [seen] = await second.club.clubAthletes({ today });
+    const clubAthletes = async (caller: Awaited<ReturnType<typeof callerFor>>) => (await caller.club.clubAthletes({ today })).filter((item) => !item.isCoachAccount);
+    const [seen] = await clubAthletes(second);
     expect(seen).toMatchObject({ userId: athleteId, followedByMe: false });
     expect(seen.coaches.map((item) => item.name)).toEqual(["Coach"]);
     expect(seen.summary).toMatchObject({ weekPlanned: 1, weekDone: 1, weekDistanceMeters: 0, toReview: 0 });
@@ -130,14 +131,32 @@ describe("coach and athlete flow", () => {
 
     await second.club.followAthlete({ athleteId });
     await second.club.followAthlete({ athleteId });
-    const following = await second.club.clubAthletes({ today });
+    const following = await clubAthletes(second);
     expect(following[0].followedByMe).toBe(true);
     expect(following[0].coaches.map((item) => [item.name, item.isMe])).toEqual([["Coach 2", true], ["Coach", false]]);
 
     await second.club.unfollowAthlete({ athleteId });
-    const after = await coach.club.clubAthletes({ today });
+    const after = await clubAthletes(coach);
     expect(after[0].coaches.map((item) => item.name)).toEqual(["Coach"]);
     expect(after.some((item) => item.email?.includes("coach"))).toBe(false);
+  });
+
+  it("lists a coach as their own athlete, for that coach only", async () => {
+    const today = "2026-11-12";
+    const coach = await callerFor(coachToken);
+    const second = await callerFor(secondCoachToken);
+
+    const own = (await coach.club.clubAthletes({ today })).filter((item) => item.isMe);
+    expect(own).toEqual([expect.objectContaining({ email: "coach@example.com", isCoachAccount: true })]);
+    const others = await second.club.clubAthletes({ today });
+    expect(others.some((item) => item.email === "coach@example.com")).toBe(false);
+
+    await expect(coach.club.athleteDetail({ athleteId: own[0].userId, today })).resolves.toMatchObject({
+      athlete: { isMe: true, isCoachAccount: true },
+      strava: { status: "off", runs: [] },
+    });
+    await expect(second.club.athleteDetail({ athleteId: own[0].userId, today })).rejects.toThrow(/não encontrado/);
+    await expect(second.club.followAthlete({ athleteId: own[0].userId })).rejects.toThrow(/não encontrado/);
   });
 
   it("keeps athletes out of coach routes", async () => {

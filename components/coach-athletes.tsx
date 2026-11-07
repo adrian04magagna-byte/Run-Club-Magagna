@@ -39,6 +39,13 @@ function coachesText(coaches: { name: string; isMe: boolean }[]) {
   return `Acompanhado por ${text}`;
 }
 
+function stravaNote(isMe: boolean, status: "ok" | "off" | "failed") {
+  if (!isMe) return "O histórico Strava é particular de cada aluno e não aparece aqui. Estes números vêm dos treinos registrados no clube.";
+  if (status === "ok") return "Estes números incluem as suas corridas do Strava. Só você vê esse histórico.";
+  if (status === "failed") return "Não foi possível consultar o Strava agora, então estes números mostram só os treinos do clube.";
+  return "Conecte seu Strava no Perfil para suas corridas aparecerem aqui.";
+}
+
 /** Every athlete in the club, whichever coach follows them, with their week at a glance. */
 export function CoachAthletes({ onOpen, onNotice }: { onOpen: (athleteId: number) => void; onNotice: (text: string) => void }) {
   const today = localToday();
@@ -55,7 +62,7 @@ export function CoachAthletes({ onOpen, onNotice }: { onOpen: (athleteId: number
   const matches: Record<Filter, (athlete: (typeof all)[number]) => boolean> = {
     all: () => true,
     mine: (athlete) => athlete.followedByMe,
-    none: (athlete) => !athlete.coaches.length,
+    none: (athlete) => !athlete.coaches.length && !athlete.isCoachAccount,
     overdue: (athlete) => athlete.summary.overdue > 0,
     review: (athlete) => athlete.summary.toReview > 0,
   };
@@ -70,7 +77,8 @@ export function CoachAthletes({ onOpen, onNotice }: { onOpen: (athleteId: number
   const list = all
     .filter(matches[filter])
     .filter((athlete) => !query || `${athlete.name} ${athlete.email}`.toLowerCase().includes(query))
-    .sort((a, b) => Number(b.followedByMe) - Number(a.followedByMe)
+    .sort((a, b) => Number(b.isMe) - Number(a.isMe)
+      || Number(b.followedByMe) - Number(a.followedByMe)
       || (b.summary.overdue + b.summary.toReview) - (a.summary.overdue + a.summary.toReview)
       || (a.name ?? "").localeCompare(b.name ?? ""));
 
@@ -95,10 +103,12 @@ export function CoachAthletes({ onOpen, onNotice }: { onOpen: (athleteId: number
             <View style={styles.rowTop}>
               <ProfileAvatar uri={athlete.avatarUrl} name={athlete.name || athlete.email} size={44} />
               <View style={styles.flex}>
-                <Text style={styles.rowName} numberOfLines={1}>{athlete.name || athlete.email}</Text>
-                <Text style={[styles.muted, !athlete.coaches.length && styles.noCoach]} numberOfLines={1}>{coachesText(athlete.coaches)}</Text>
+                <Text style={styles.rowName} numberOfLines={1}>{athlete.name || athlete.email}{athlete.isMe ? " (você)" : ""}</Text>
+                {athlete.isCoachAccount
+                  ? <Text style={styles.muted} numberOfLines={1}>Seus dados de aluno</Text>
+                  : <Text style={[styles.muted, !athlete.coaches.length && styles.noCoach]} numberOfLines={1}>{coachesText(athlete.coaches)}</Text>}
               </View>
-              {athlete.followedByMe ? <Ionicons name="chevron-forward" size={18} color={C.muted} /> : (
+              {athlete.followedByMe || athlete.isCoachAccount ? <Ionicons name="chevron-forward" size={18} color={C.muted} /> : (
                 <Pressable
                   disabled={follow.isPending}
                   onPress={(event) => {
@@ -162,7 +172,7 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
     );
   }
 
-  const { athlete, summary, totals, weeks, assignments, activities } = detail.data;
+  const { athlete, summary, totals, weeks, assignments, activities, strava } = detail.data;
   const firstName = (athlete.name || "Aluno").split(" ")[0];
   const open = assignments.filter((item) => item.status === "assigned").sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate));
   const done = assignments.filter((item) => item.status !== "assigned");
@@ -201,7 +211,7 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
         </View>
       </View>
 
-      <View style={styles.followCard}>
+      {athlete.isCoachAccount ? null : <View style={styles.followCard}>
         <Text style={styles.cardLabel}>TREINADORES</Text>
         {athlete.coaches.length ? athlete.coaches.map((coach) => (
           <View key={coach.id} style={styles.coachRow}>
@@ -224,11 +234,11 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
             {firstName} continua no clube e o histórico é mantido.{myOpen ? ` ${myOpen} treino${myOpen > 1 ? "s" : ""} seu${myOpen > 1 ? "s" : ""} pendente${myOpen > 1 ? "s" : ""} continua${myOpen > 1 ? "m" : ""} na agenda.` : ""}
           </Text>
         ) : null}
-      </View>
+      </View>}
 
       {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
 
-      {athlete.followedByMe ? (
+      {athlete.isCoachAccount ? null : athlete.followedByMe ? (
         <View style={styles.actions}>
           <Pressable onPress={() => setSending(!sending)} style={({ pressed }) => [styles.action, styles.actionPrimary, pressed && styles.pressed]}>
             <Ionicons name="send-outline" size={15} color={C.ink} />
@@ -277,15 +287,17 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
             <Stat icon="flag-outline" label="Maior corrida" value={`${formatKm(totals.longestRunMeters)} km`} />
             <Stat icon="star-outline" label="Nota média" value={totals.averageRating === null ? "—" : `${totals.averageRating.toFixed(1).replace(".", ",")} de 5`} />
           </View>
-          <SectionTitle title="Esforço que o aluno relatou" />
-          <View style={styles.tags}>
-            <Tag text={`Leve: ${totals.efforts.easy}`} />
-            <Tag text={`Desafiador: ${totals.efforts.challenging}`} />
-            <Tag text={`Intenso: ${totals.efforts.intense}`} />
-          </View>
+          {athlete.isCoachAccount ? null : <>
+            <SectionTitle title="Esforço que o aluno relatou" />
+            <View style={styles.tags}>
+              <Tag text={`Leve: ${totals.efforts.easy}`} />
+              <Tag text={`Desafiador: ${totals.efforts.challenging}`} />
+              <Tag text={`Intenso: ${totals.efforts.intense}`} />
+            </View>
+          </>}
           <Text style={styles.helper}>{lastRunText(summary.daysSinceLastRun)}.</Text>
           <View style={styles.gap} />
-          <CoachNote label="STRAVA">O histórico Strava é particular de cada aluno e não aparece aqui. Estes números vêm dos treinos registrados no clube.</CoachNote>
+          <CoachNote label="STRAVA">{stravaNote(athlete.isMe, strava.status)}</CoachNote>
         </View>
       ) : null}
 
@@ -306,6 +318,24 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
               </View>
             </View>
           )) : <Text style={styles.helper}>Nenhum treino concluído ainda.</Text>}
+        </View>
+      ) : null}
+
+      {tab === "runs" && strava.runs.length ? (
+        <View>
+          <SectionTitle title={`Strava · ${strava.runs.length}`} />
+          {strava.runs.map((run) => (
+            <View key={run.id} style={styles.run}>
+              <Text style={styles.sendTitle}>{run.title}</Text>
+              <Text style={styles.muted}>{formatDay(run.date)}</Text>
+              <View style={styles.tags}>
+                <Tag text={`${formatKm(run.distanceMeters, 2)} km`} />
+                <Tag text={formatDuration(run.movingSeconds)} />
+                <Tag text={`${formatPace(run.distanceMeters ? (run.movingSeconds * 1000) / run.distanceMeters : null)} /km`} />
+              </View>
+            </View>
+          ))}
+          <View style={styles.gap} />
         </View>
       ) : null}
 
@@ -331,9 +361,9 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
                 <Text style={styles.reviewedTitle}>{review.mine ? "Sua avaliação" : `Avaliação de ${review.coachName}`}</Text>
                 <Text style={styles.muted}>{review.comment}</Text>
               </View>
-            ) : athlete.followedByMe ? <ReviewForm activityId={activity.id} onNotice={setNotice} /> : null}
+            ) : athlete.followedByMe && !athlete.isCoachAccount ? <ReviewForm activityId={activity.id} onNotice={setNotice} /> : null}
           </View>
-        )) : <EmptyState icon="footsteps-outline" title="Nenhuma corrida no clube" text={`As corridas que ${firstName} registrar no clube aparecem aqui.`} />
+        )) : strava.runs.length ? null : <EmptyState icon="footsteps-outline" title="Nenhuma corrida no clube" text={`As corridas que ${firstName} registrar no clube aparecem aqui.`} />
       ) : null}
     </View>
   );

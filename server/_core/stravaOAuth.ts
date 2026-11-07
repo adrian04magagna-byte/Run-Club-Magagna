@@ -583,9 +583,8 @@ export async function listStravaActivities(userId: number, page: number) {
 
 const STRAVA_MAX_PAGE_SIZE = 200;
 
-/** Every activity started after `afterEpochSeconds`, newest pages first; stops after `maxPages`. */
-export async function listStravaActivitiesSince(userId: number, afterEpochSeconds: number, maxPages: number) {
-  const items: StravaActivitySummary[] = [];
+async function listRawActivitiesSince(userId: number, afterEpochSeconds: number, maxPages: number) {
+  const items: unknown[] = [];
   for (let page = 1; page <= maxPages; page += 1) {
     const query = new URLSearchParams({
       after: String(Math.max(0, Math.floor(afterEpochSeconds))),
@@ -594,10 +593,30 @@ export async function listStravaActivitiesSince(userId: number, afterEpochSecond
     });
     const payload = await requestStravaApi(userId, "/athlete/activities", query);
     if (!Array.isArray(payload)) throw trpcError("SERVICE_UNAVAILABLE", "O Strava retornou uma lista de atividades inválida.");
-    items.push(...payload.map(toSummary).filter((item): item is StravaActivitySummary => item !== null));
+    items.push(...payload);
     if (payload.length < STRAVA_MAX_PAGE_SIZE) return { items, truncated: false };
   }
   return { items, truncated: true };
+}
+
+/** Every activity started after `afterEpochSeconds`, newest pages first; stops after `maxPages`. */
+export async function listStravaActivitiesSince(userId: number, afterEpochSeconds: number, maxPages: number) {
+  const { items, truncated } = await listRawActivitiesSince(userId, afterEpochSeconds, maxPages);
+  return { items: items.map(toSummary).filter((item): item is StravaActivitySummary => item !== null), truncated };
+}
+
+/** Same list with each activity's encoded route, which stays on the server. */
+export async function listStravaRoutedActivities(userId: number, afterEpochSeconds: number, maxPages: number) {
+  const { items, truncated } = await listRawActivitiesSince(userId, afterEpochSeconds, maxPages);
+  return {
+    truncated,
+    items: items.flatMap((raw) => {
+      const summary = toSummary(raw);
+      if (!summary) return [];
+      const route = (raw as { map?: { summary_polyline?: unknown } }).map?.summary_polyline;
+      return [{ ...summary, routePolyline: typeof route === "string" && route ? route : null }];
+    }),
+  };
 }
 
 export async function getStravaActivityDetail(userId: number, activityId: string): Promise<StravaActivityDetail> {

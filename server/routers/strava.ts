@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { STRAVA_REQUIRED_SCOPE } from "../../shared/strava";
-import { deleteStravaHistory, getStravaHistoryStatus, saveStravaHistory } from "../_core/stravaHistory";
+import { deleteStravaHistory, getRunMap, getStravaHistoryStatus, saveStravaHistory, updateRunMap } from "../_core/stravaHistory";
 import { memberProcedure, router } from "../_core/trpc";
 import {
   beginStravaAuthorization,
@@ -97,6 +97,18 @@ export const stravaRouter = router({
     disableCaching(ctx.res);
     return deleteStravaHistory(ctx.user.id);
   }),
+
+  runMap: memberProcedure.query(async ({ ctx }) => {
+    disableCaching(ctx.res);
+    return getRunMap(ctx.user.id);
+  }),
+
+  updateRunMap: memberProcedure
+    .input(z.object({ consentAccepted: z.boolean().default(false) }))
+    .mutation(async ({ ctx, input }) => {
+      disableCaching(ctx.res);
+      return updateRunMap(ctx.user.id, input.consentAccepted);
+    }),
 
   disconnect: memberProcedure.mutation(async ({ ctx }) => {
     disableCaching(ctx.res);

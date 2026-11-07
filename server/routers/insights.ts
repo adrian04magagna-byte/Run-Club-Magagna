@@ -22,7 +22,7 @@ import { getDb } from "../db";
 
 const RUN_SPORTS = new Set(["Run", "TrailRun", "VirtualRun"]);
 const STRAVA_CACHE_MS = 5 * 60 * 1000;
-const ALL_TIME_MAX_PAGES = 10;
+export const ALL_TIME_MAX_PAGES = 10;
 const RECENT_LIMIT = 20;
 const localDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -36,6 +36,30 @@ async function cachedStravaActivities(userId: number, afterEpochSeconds: number,
   const fresh = { at: Date.now(), ...(await listStravaActivitiesSince(userId, afterEpochSeconds, maxPages)) };
   stravaCache.set(key, fresh);
   return fresh;
+}
+
+/** The member's own Strava runs as training entries, leaving out those already imported. */
+export async function stravaRunEntries(userId: number, afterEpochSeconds: number, maxPages: number, importedIds: Set<string | null> = new Set()) {
+  const { items, truncated } = await cachedStravaActivities(userId, afterEpochSeconds, maxPages);
+  const entries: TrainingEntry[] = [];
+  for (const item of items) {
+    if (!RUN_SPORTS.has(item.sportType) && !RUN_SPORTS.has(item.type)) continue;
+    if (importedIds.has(item.id)) continue;
+    const date = (item.startDateLocal || item.startDate).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    entries.push({
+      id: `strava-${item.id}`,
+      source: "strava",
+      title: item.name,
+      date,
+      startLocal: item.startDateLocal || null,
+      distanceMeters: Math.round(item.distanceMeters),
+      movingSeconds: Math.round(item.movingTimeSeconds),
+      elevationMeters: Math.round(item.elevationGainMeters),
+      averageHeartRate: item.averageHeartRate,
+    });
+  }
+  return { entries, truncated };
 }
 
 /** Shifts a UTC instant into the runner's calendar day using the offset the app reports. */
@@ -82,25 +106,9 @@ export const insightsRouter = router({
       if (strava.connected) {
         try {
           const after = fetchFrom ? Date.parse(`${fetchFrom}T00:00:00.000Z`) / 1000 : 0;
-          const result = await cachedStravaActivities(ctx.user.id, after, days ? 3 : ALL_TIME_MAX_PAGES);
+          const result = await stravaRunEntries(ctx.user.id, after, days ? 3 : ALL_TIME_MAX_PAGES, importedStravaIds);
           truncated = result.truncated;
-          for (const item of result.items) {
-            if (!RUN_SPORTS.has(item.sportType) && !RUN_SPORTS.has(item.type)) continue;
-            if (importedStravaIds.has(item.id)) continue;
-            const date = (item.startDateLocal || item.startDate).slice(0, 10);
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-            entries.push({
-              id: `strava-${item.id}`,
-              source: "strava",
-              title: item.name,
-              date,
-              startLocal: item.startDateLocal || null,
-              distanceMeters: Math.round(item.distanceMeters),
-              movingSeconds: Math.round(item.movingTimeSeconds),
-              elevationMeters: Math.round(item.elevationGainMeters),
-              averageHeartRate: item.averageHeartRate,
-            });
-          }
+          entries.push(...result.entries);
         } catch (error) {
           stravaError = error instanceof TRPCError ? error.message : "Não foi possível consultar o Strava agora.";
         }

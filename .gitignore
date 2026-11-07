@@ -72,4 +72,5 @@ Thumbs.db
 .vercel
 .env*
 .codigo-treinador.txt
+.aluno-teste.txt
 dist-server/

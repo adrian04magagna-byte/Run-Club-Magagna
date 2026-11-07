@@ -181,6 +181,7 @@ export const stravaConnections = pgTable(
     consentedAt: timestamp("consentedAt", { withTimezone: true }).notNull(),
     consentVersion: varchar("consentVersion", { length: 32 }).notNull(),
     historyConsentAt: timestamp("historyConsentAt", { withTimezone: true }),
+    mapConsentAt: timestamp("mapConsentAt", { withTimezone: true }),
     connectedAt: timestamp("connectedAt", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -199,6 +200,8 @@ export const stravaActivityRecords = pgTable(
     startDate: timestamp("startDate", { withTimezone: true }).notNull(),
     summary: jsonb("summary").$type<StravaActivitySummary>().notNull(),
     streams: jsonb("streams").$type<StravaActivityStreams>(),
+    /** Metres run per IBGE municipality. The route is not stored. */
+    places: jsonb("places").$type<Record<string, number>>(),
     savedAt: timestamp("savedAt", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [uniqueIndex("strava_activity_records_user_activity_unique").on(table.userId, table.stravaActivityId)],

@@ -3,15 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 process.env.DATABASE_URL = "pglite:memory";
 
 const strava = vi.hoisted(() => ({ list: vi.fn(), streams: vi.fn() }));
-vi.mock("../server/_core/stravaOAuth", () => ({ listStravaActivitiesSince: strava.list, getStravaActivityStreams: strava.streams }));
+vi.mock("../server/_core/stravaOAuth", () => ({ listStravaRoutedActivities: strava.list, getStravaActivityStreams: strava.streams }));
 
 const { TRPCError } = await import("@trpc/server");
 const { eq } = await import("drizzle-orm");
 const { stravaActivityRecords, stravaConnections, users } = await import("../drizzle/schema");
 const { getDb } = await import("../server/db");
-const { deleteStravaHistory, getStravaHistoryStatus, saveStravaHistory } = await import("../server/_core/stravaHistory");
+const { deleteStravaHistory, getRunMap, getStravaHistoryStatus, saveStravaHistory, updateRunMap } = await import("../server/_core/stravaHistory");
 
-const run = (id: number, sportType = "Run") => ({ id: String(id), name: "Treino", sportType, startDate: `2026-10-${String((id % 28) + 1).padStart(2, "0")}T10:00:00Z`, distanceMeters: 5000 });
+const run = (id: number, sportType = "Run") => ({ id: String(id), name: "Treino", sportType, startDate: `2026-10-${String((id % 28) + 1).padStart(2, "0")}T10:00:00Z`, distanceMeters: 5000, routePolyline: null });
 
 describe("Strava test history", () => {
   let coachId = 0;
@@ -45,6 +45,21 @@ describe("Strava test history", () => {
     const db = (await getDb())!;
     await db.delete(stravaConnections).where(eq(stravaConnections.userId, coachId));
     await expect(saveStravaHistory(coachId, true)).rejects.toThrow(/Conecte/);
+  });
+
+  it("paints a map only with consent and never keeps the route", async () => {
+    const route = "nrvnCnlr{GgE?gEfE"; // short line in the centre of São Paulo
+    strava.list.mockResolvedValue({ items: [{ ...run(1), routePolyline: route }], truncated: false });
+    await saveStravaHistory(coachId, true);
+    await expect(getRunMap(coachId)).resolves.toMatchObject({ consented: false, places: [] });
+    await expect(updateRunMap(otherId, false)).rejects.toThrow(/Autorize/);
+    const map = await updateRunMap(coachId, true);
+    expect(map.places).toEqual([{ code: "3550308", meters: 5000, runs: 1, lastDate: expect.any(String) }]);
+    const db = (await getDb())!;
+    const [row] = await db.select().from(stravaActivityRecords).where(eq(stravaActivityRecords.userId, coachId));
+    expect(JSON.stringify(row)).not.toContain(route);
+    await deleteStravaHistory(coachId);
+    await expect(getRunMap(coachId)).resolves.toMatchObject({ consented: false, places: [] });
   });
 
   it("keeps each account apart and deletes only its own rows", async () => {

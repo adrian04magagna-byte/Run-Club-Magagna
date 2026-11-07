@@ -1,5 +1,7 @@
 // Bundles the API into a single file for a plain Node server (e.g. the VM, run by pm2).
 // Everything is bundled, so the server needs only Node and a .env file next to it.
+import { cp } from "node:fs/promises";
+
 import { build } from "esbuild";
 
 await build({
@@ -15,3 +17,6 @@ await build({
   banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
   logLevel: "info",
 });
+
+// Municipality borders stay outside the bundle and load only when a map is updated.
+await cp("server/data", "dist-server/data", { recursive: true });

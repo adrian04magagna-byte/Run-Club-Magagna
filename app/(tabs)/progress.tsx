@@ -25,7 +25,7 @@ export default function ProgressScreen() {
   const header = (
     <View style={styles.header}>
       <Text style={styles.eyebrow}>{isCoach ? "SEU TREINO E A TURMA" : "SUA EVOLUÇÃO"}</Text>
-      <Text style={styles.title}>Progresso</Text>
+      <Text style={styles.title}>Dados</Text>
     </View>
   );
 

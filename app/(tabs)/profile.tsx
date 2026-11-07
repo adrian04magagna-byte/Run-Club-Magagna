@@ -133,7 +133,7 @@ export default function ProfileScreen() {
 
     <View style={styles.profileCard}>
       <ProfileAvatar uri={avatarUrl} name={displayName} size={68} />
-      <View style={styles.profileCopy}><Text style={styles.name}>{displayName}</Text><Text style={styles.profileDetail}>{profile.data?.email || user?.email || "Conta autenticada"}</Text><Pill label={isCoach ? "TREINADOR" : "ALUNA APROVADA"} tone="lime" /></View>
+      <View style={styles.profileCopy}><Text style={styles.name}>{displayName}</Text><Text style={styles.profileDetail}>{profile.data?.email || user?.email || "Conta autenticada"}</Text><Pill label={isCoach ? "TREINADOR" : "ALUNO APROVADO"} tone="lime" /></View>
     </View>
     <Pressable accessibilityRole="button" onPress={beginEdit} style={({ pressed }) => [styles.editLink, pressed && styles.pressed]}>
       <Ionicons name="create-outline" size={18} color={C.ink} />
