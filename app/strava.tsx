@@ -365,7 +365,7 @@ function StravaHome() {
       </View>
 
       <CoachNote label="PRIVACIDADE" >
-        Este espaço é só seu. O Treinador e os outros alunos não podem ver atividades importadas do Strava. Elas também não entram no histórico avaliável do Clube.
+        Ao conectar, os treinadores veem suas corridas do Strava e seu mapa. Os outros alunos não veem. Você pode tirar essa permissão na aba Mapa quando quiser.
       </CoachNote>
 
       {status.isLoading ? <ActivityIndicator size="large" color={C.ink} style={styles.statusSpinner} /> : null}
@@ -391,7 +391,7 @@ function StravaHome() {
           <Text style={styles.connectionCopy}>O app consulta nome e data das corridas, distância, tempos, ritmo, elevação e, quando disponíveis, frequência cardíaca, cadência, potência, temperatura, parciais e séries de sensores. A finalidade é mostrar seu histórico somente a você; activity:read não inclui atividades “Somente você”. Enquanto conectado, guardamos tokens OAuth criptografados, escopos e um hash do identificador Strava para manter o vínculo; o ID legível e as atividades/métricas não são salvos. Ao desconectar, removemos token, hash, escopos e estados OAuth locais; atividades removidas no Strava deixam de aparecer na próxima atualização.</Text>
           <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: consentAccepted }} onPress={() => setConsentAccepted((checked) => !checked)} style={styles.consentRow}>
             <View style={[styles.checkbox, consentAccepted && styles.checkboxChecked]}>{consentAccepted ? <Text style={styles.checkmark}>✓</Text> : null}</View>
-            <Text style={styles.consentText}>Entendi que o Run Club consultará minhas atividades sob demanda, que só eu as verei e que os tokens ficam criptografados no servidor enquanto conectado. Posso desconectar no app e revogar o acesso na Strava a qualquer momento.</Text>
+            <Text style={styles.consentText}>Entendi que o Run Club consultará minhas atividades sob demanda, que os treinadores verão minhas corridas e meu mapa e que os tokens ficam criptografados no servidor enquanto conectado. Posso desconectar no app e revogar o acesso na Strava a qualquer momento.</Text>
           </Pressable>
           <PrimaryButton label={start.isPending ? "Abrindo Strava…" : "Conectar minha conta Strava"} icon="arrow-forward" onPress={() => void connect()} />
           <Text style={styles.scopeNote}>Permissão solicitada: activity:read. O app não pede acesso a atividades privadas nesta etapa.</Text>

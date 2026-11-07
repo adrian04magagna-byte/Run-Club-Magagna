@@ -41,9 +41,9 @@ function coachesText(coaches: { name: string; isMe: boolean }[]) {
 }
 
 function stravaNote(isMe: boolean, status: "ok" | "off" | "failed" | "private", firstName: string) {
-  if (status === "ok") return isMe ? "Estes números incluem as suas corridas do Strava. Só você vê esse histórico." : `${firstName} autorizou os treinadores a verem as corridas do Strava, e elas entram nestes números.`;
+  if (status === "ok") return isMe ? "Estes números incluem as suas corridas do Strava. Só você vê esse histórico." : "Estes números incluem as corridas do Strava.";
   if (status === "failed") return "Não foi possível consultar o Strava agora, então estes números mostram só os treinos do clube.";
-  if (status === "private") return `${firstName} ainda não autorizou os treinadores a verem o Strava. A autorização fica na aba Mapa de ${firstName}.`;
+  if (status === "private") return `${firstName} escolheu não mostrar o Strava aos treinadores.`;
   return isMe ? "Conecte seu Strava no Perfil para suas corridas aparecerem aqui." : `${firstName} ainda não conectou o Strava.`;
 }
 

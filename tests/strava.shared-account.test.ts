@@ -18,12 +18,12 @@ describe("one Strava login on the coach and student profiles", () => {
   let coachId = 0;
   let studentId = 0;
 
-  async function connect(userId: number, tokens: { access: string; refresh: string }, expiresAt = inHours(6)) {
+  async function connect(userId: number, tokens: { access: string; refresh: string }, expiresAt = inHours(6), consentVersion = "test") {
     const state = String(userId).padStart(64, "a");
     const db = (await getDb())!;
     await db.insert(stravaOAuthStates).values({
       stateHash: oauth.hashStravaOAuthState(state), userId, platform: "web", returnUri: "https://app.example.com/strava",
-      consentedAt: new Date(), consentVersion: "test", expiresAt: new Date(Date.now() + 60_000),
+      consentedAt: new Date(), consentVersion, expiresAt: new Date(Date.now() + 60_000),
     });
     vi.stubGlobal("fetch", vi.fn(async () => json({
       access_token: tokens.access, refresh_token: tokens.refresh, expires_at: expiresAt, scope: "activity:read", athlete: { id: 134815 },
@@ -39,6 +39,16 @@ describe("one Strava login on the coach and student profiles", () => {
   });
 
   afterEach(() => vi.unstubAllGlobals());
+
+  it("shares with coaches only under the terms that say so", async () => {
+    const { STRAVA_CONSENT_VERSION } = await import("../shared/strava");
+    await connect(studentId, { access: "a", refresh: "b" }, inHours(6), STRAVA_CONSENT_VERSION);
+    await connect(coachId, { access: "c", refresh: "d" });
+    const db = (await getDb())!;
+    const rows = await db.select().from(stravaConnections).where(inArray(stravaConnections.userId, [coachId, studentId]));
+    expect(rows.find((row) => row.userId === studentId)?.coachShareAt).toBeInstanceOf(Date);
+    expect(rows.find((row) => row.userId === coachId)?.coachShareAt).toBeNull();
+  });
 
   it("connects both profiles and gives the older one the newest grant", async () => {
     await connect(studentId, { access: "old", refresh: "old-refresh" });

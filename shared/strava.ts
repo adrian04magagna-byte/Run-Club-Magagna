@@ -1,6 +1,6 @@
 export const RUN_CLUB_APP_SCHEME = "runclubmagagna";
 export const STRAVA_REQUIRED_SCOPE = "activity:read";
-export const STRAVA_CONSENT_VERSION = "2026-10";
+export const STRAVA_CONSENT_VERSION = "2026-11";
 export const STRAVA_CALLBACK_PATH = "/strava/callback";
 
 export type StravaActivitySummary = {

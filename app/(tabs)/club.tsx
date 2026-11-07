@@ -113,7 +113,7 @@ function CoachClub() {
           </View>
         )) : <EmptyState icon="checkmark-done-outline" title="Tudo em dia" text="Os treinos registrados pelos alunos aparecem aqui para você avaliar." />}
         <View style={styles.gap} />
-        <CoachNote label="STRAVA">O histórico Strava é particular de cada aluno e não aparece aqui. Esta área avalia os treinos que o aluno registra no clube.</CoachNote>
+        <CoachNote label="STRAVA">Esta área avalia os treinos que o aluno registra no clube. As corridas do Strava ficam na ficha de cada aluno.</CoachNote>
       </> : null}
     </Screen>
   );
@@ -268,7 +268,7 @@ function AthleteClub() {
         <View style={styles.gap} />
         <Pressable onPress={() => router.push("/strava")} style={({ pressed }) => [styles.athleteRow, pressed && styles.pressed]}>
           <View style={styles.stravaIcon}><Ionicons name="flash" size={16} color={C.white} /></View>
-          <View style={styles.flexCopy}><Text style={styles.cardTitle}>Histórico do Strava</Text><Text style={styles.cardDetail}>Suas corridas do Strava, só para você.</Text></View>
+          <View style={styles.flexCopy}><Text style={styles.cardTitle}>Histórico do Strava</Text><Text style={styles.cardDetail}>Suas corridas do Strava.</Text></View>
           <Ionicons name="chevron-forward" size={18} color={C.muted} />
         </Pressable>
       </> : null}

@@ -385,6 +385,8 @@ export async function completeStravaAuthorization(userId: number, code: string, 
       tokenExpiresAt: tokenData.expiresAt,
       consentedAt: stateRecord.consentedAt,
       consentVersion: stateRecord.consentVersion,
+      // This version of the terms tells the member that coaches see their runs and map.
+      coachShareAt: stateRecord.consentVersion === STRAVA_CONSENT_VERSION ? stateRecord.consentedAt : null,
     });
     // Coach and student profiles of one person share a Strava login, so a new grant must reach both.
     await tx.update(stravaConnections).set({
