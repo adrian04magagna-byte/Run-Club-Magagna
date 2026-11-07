@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 
 import { BarChart, DeltaChip, EmptyState, PeriodSelector, Skeleton, delta, formatDay, formatDuration, formatKm, formatPace } from "@/components/dashboard-ui";
+import { RunAnalysisSection } from "@/components/run-analysis";
 import { C, PrimaryButton, ProgressRing, Screen, SectionTitle } from "@/components/run-ui";
 import { useAuth } from "@/hooks/use-auth";
 import { useInsights } from "@/hooks/use-insights";
@@ -119,6 +120,8 @@ export default function ProgressScreen() {
       </View>
       </View>
 
+      <View style={styles.gap} />
+      <RunAnalysisSection />
       <View style={styles.gap} />
       {isCoach ? (
         <>

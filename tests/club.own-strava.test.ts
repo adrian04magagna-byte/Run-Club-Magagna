@@ -5,6 +5,7 @@ process.env.DATABASE_URL = "pglite:memory";
 process.env.SESSION_SECRET = "test-session-secret-with-at-least-32-chars";
 process.env.COACH_EMAIL = "coach@example.com";
 process.env.COACH_SIGNUP_CODE = "coach-code";
+process.env.COHERE_API_KEY = "test-key";
 process.env.EXPO_PUBLIC_API_BASE_URL = "https://api.example.com";
 
 const strava = vi.hoisted(() => ({ list: vi.fn() }));
@@ -88,6 +89,26 @@ describe("a coach's own Strava runs in the athlete list", () => {
 
     await updateCoachShare(sharerId, false);
     await expect(coach.club.athleteDetail({ athleteId: sharerId, today })).resolves.toMatchObject({ strava: { status: "private", runs: [] }, places: [] });
+  });
+
+  it("asks the AI with aggregates only and returns a checked diagnostic", async () => {
+    const answer = { headline: "Base em construção", strengths: ["Constância"], attention: ["Pouco volume leve"], nextWeeks: ["Mantenha o volume"] };
+    const send = vi.fn(async (_url: string, _init: { body: string }) => new Response(JSON.stringify({ message: { content: [{ type: "text", text: JSON.stringify(answer) }] } })));
+    vi.stubGlobal("fetch", send);
+    const items = Array.from({ length: 10 }, (_, index) => ({ ...run, id: `d${index}`, name: "Treino no Parque Farroupilha", startDate: `2026-11-${String(index + 1).padStart(2, "0")}T09:00:00Z`, startDateLocal: `2026-11-${String(index + 1).padStart(2, "0")}T06:00:00`, distanceMeters: 5000 + index * 500 }));
+    strava.list.mockResolvedValue({ items, truncated: false });
+    vi.setSystemTime(new Date("2026-11-12T12:00:00Z"));
+
+    const input = { today, tzOffsetMinutes: 180 };
+    await expect(coach.insights.diagnostic(input)).resolves.toEqual(answer);
+    const body = send.mock.calls[0][1].body;
+    expect(body).not.toContain("Farroupilha");
+    expect(body).not.toContain("Coach");
+    await coach.insights.diagnostic(input);
+    await coach.insights.diagnostic(input);
+    await expect(coach.insights.diagnostic(input)).rejects.toThrow(/3 diagnósticos/);
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("never shows those runs on someone else's sheet", async () => {

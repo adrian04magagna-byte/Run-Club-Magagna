@@ -7,6 +7,7 @@ import { DayPicker } from "@/components/coach-plans";
 import { BarChart, EmptyState, Segmented, formatDay, formatDuration, formatKm, formatPace } from "@/components/dashboard-ui";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { ReviewForm } from "@/components/review-form";
+import { RunAnalysisPanel } from "@/components/run-analysis";
 import { RunMapExplorer } from "@/components/run-map";
 import { BackButton, C, CoachNote, SectionTitle } from "@/components/run-ui";
 import { localToday } from "@/hooks/use-insights";
@@ -173,7 +174,7 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
     );
   }
 
-  const { athlete, summary, totals, weeks, assignments, activities, strava, places } = detail.data;
+  const { athlete, summary, totals, weeks, assignments, activities, strava, places, analysis } = detail.data;
   const firstName = (athlete.name || "Aluno").split(" ")[0];
   const open = assignments.filter((item) => item.status === "assigned").sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate));
   const done = assignments.filter((item) => item.status !== "assigned");
@@ -299,6 +300,7 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
           </>}
           <Text style={styles.helper}>{lastRunText(summary.daysSinceLastRun)}.</Text>
           <View style={styles.gap} />
+          {analysis ? <><RunAnalysisPanel analysis={analysis} subject={athlete.isMe ? "you" : "athlete"} /><View style={styles.gap} /></> : null}
           <CoachNote label="STRAVA">{stravaNote(athlete.isMe, strava.status, firstName)}</CoachNote>
         </View>
       ) : null}

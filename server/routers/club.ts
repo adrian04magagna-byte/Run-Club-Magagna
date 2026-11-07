@@ -15,6 +15,7 @@ import {
   workouts,
 } from "../../drizzle/schema";
 import { athleteSummary } from "../../shared/club-athletes";
+import { analyzeRuns } from "../../shared/run-analysis";
 import { addDays, paceSecondsPerKm, weeklyBuckets, type TrainingEntry } from "../../shared/insights";
 import { getRunMap } from "../_core/stravaHistory";
 import { getStravaConnectionStatus } from "../_core/stravaOAuth";
@@ -336,6 +337,7 @@ export const clubRouter = router({
         efforts: { easy: effortCount("easy"), challenging: effortCount("challenging"), intense: effortCount("intense") },
       },
       weeks: weeklyBuckets(allEntries, input.today, 8),
+      analysis: analyzeRuns(allEntries, input.today),
       strava: { status: own.status, runs: own.entries },
       places: canSeeStrava ? (await getRunMap(athlete.userId)).places : [],
       assignments: sends.map(({ coachName, coachProfileName, ...send }) => ({

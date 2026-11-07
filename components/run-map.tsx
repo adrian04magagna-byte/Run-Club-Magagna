@@ -18,7 +18,7 @@ const number = new Intl.NumberFormat("pt-BR");
 const km = (meters: number) => `${number.format(Math.round(meters / 100) / 10)} km`;
 
 // react-native-svg's onPress does not reach paths on the web, where they are plain DOM nodes.
-const tapProps = (onTap: () => void): object => ({ onPress: onTap, ...(Platform.OS === "web" ? { style: { cursor: "pointer" } } : {}) });
+export const tapProps = (onTap: () => void): object => ({ onPress: onTap, ...(Platform.OS === "web" ? { style: { cursor: "pointer" } } : {}) });
 
 async function loadMap(): Promise<BrazilMap> {
   const base = Platform.OS === "web" ? "" : getApiBaseUrl();
