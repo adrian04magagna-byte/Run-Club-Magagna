@@ -58,16 +58,21 @@ export function TopBar({ tabs }: { tabs?: BottomTabBarProps }) {
   );
 }
 
+const ATHLETE_ROUTE = "aluno/[id]";
+
 function TabPills({ state, descriptors, navigation }: BottomTabBarProps) {
+  const currentRoute = state.routes[state.index];
+  // The athlete sheet has no pill of its own: it belongs to the Alunos tab.
+  const activeName = currentRoute.name === ATHLETE_ROUTE ? "club" : currentRoute.name;
   return (
     <View style={styles.nav}>
-      {state.routes.map((route, index) => {
+      {state.routes.filter((route) => route.name !== ATHLETE_ROUTE).map((route) => {
         const { options } = descriptors[route.key];
-        const focused = state.index === index;
+        const focused = route.name === activeName;
         const color = focused ? C.ink : "#B9C2C9";
         const onPress = () => {
           const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
-          if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
+          if (route.key !== currentRoute.key && !event.defaultPrevented) navigation.navigate(route.name, route.params);
         };
         return (
           <Pressable

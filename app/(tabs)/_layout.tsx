@@ -18,7 +18,9 @@ export default function TabLayout() {
   const bottomPadding = Platform.OS === "web" ? 11 : Math.max(insets.bottom, 8);
   const tabBarHeight = 61 + bottomPadding;
 
-  if (loading || (user && user.role !== "admin" && (athleteStatus.isLoading || athleteStatus.isFetching))) return <View style={styles.loading}><ActivityIndicator size="large" color={C.ink} /></View>;
+  // A refetch must not unmount the tabs of an approved athlete: that would reset the navigation to Hoje.
+  const checkingStatus = athleteStatus.isFetching && athleteStatus.data?.status !== "approved";
+  if (loading || (user && user.role !== "admin" && checkingStatus)) return <View style={styles.loading}><ActivityIndicator size="large" color={C.ink} /></View>;
   if (!user) return <Redirect href="/login" />;
   if (user.role !== "admin" && athleteStatus.data?.status !== "approved") {
     if (athleteStatus.data?.status === "pending") return <Redirect href={{ pathname: "/pending", params: { email: user.email ?? "" } }} />;
@@ -28,6 +30,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      backBehavior="history"
       tabBar={desktop ? (props) => <TopBar tabs={props} /> : undefined}
       screenOptions={{
         // Phones keep the tabs at the bottom and show the same dark bar as the screen header.
@@ -47,6 +50,8 @@ export default function TabLayout() {
       <Tabs.Screen name="plans" options={{ title: "Planos", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "map" : "map-outline"} size={21} color={color} /> }} />
       <Tabs.Screen name="club" options={{ title: user.role === "admin" ? "Alunos" : "Clube", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "people" : "people-outline"} size={21} color={color} /> }} />
       <Tabs.Screen name="profile" options={{ title: "Perfil", tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "person" : "person-outline"} size={21} color={color} /> }} />
+      {/* The athlete sheet stays inside the tabs, so the navigation bar remains on screen. */}
+      <Tabs.Screen name="aluno/[id]" options={{ href: null }} />
     </Tabs>
   );
 }

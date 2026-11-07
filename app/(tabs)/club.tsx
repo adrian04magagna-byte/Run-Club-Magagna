@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 
 import { DateChips, EmptyState, Segmented, SourceBadge, STRAVA_ORANGE, formatDay, formatKm, formatPace } from "@/components/dashboard-ui";
 import { AppHeader, C, CoachNote, Pill, Screen, SectionTitle } from "@/components/run-ui";
-import { AthleteSheet, CoachAthletes } from "@/components/coach-athletes";
+import { CoachAthletes } from "@/components/coach-athletes";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { ReviewForm } from "@/components/review-form";
 import { useAuth } from "@/hooks/use-auth";
@@ -45,6 +45,7 @@ export default function ClubScreen() {
 }
 
 function CoachClub() {
+  const router = useRouter();
   const utils = trpc.useUtils();
   const pending = trpc.club.pendingAthletes.useQuery();
   const feed = trpc.club.coachActivityFeed.useQuery();
@@ -52,13 +53,12 @@ function CoachClub() {
   const approve = trpc.club.approveAthlete.useMutation({ onSuccess: refreshTeam });
   const reject = trpc.club.rejectAthlete.useMutation({ onSuccess: refreshTeam });
   const [tab, setTab] = useState<CoachTab | null>(null);
-  const [openAthlete, setOpenAthlete] = useState<number | null>(null);
+  const openAthlete = (athleteId: number) => router.push({ pathname: "/aluno/[id]", params: { id: String(athleteId) } });
   const [notice, setNotice] = useState("");
 
   const pageError = pending.error || feed.error;
   const toReview = (feed.data ?? []).filter((entry) => !entry.review);
   if (pending.isLoading || feed.isLoading) return <LoadingState />;
-  if (openAthlete) return <Screen scroll><AthleteSheet athleteId={openAthlete} onBack={() => setOpenAthlete(null)} /></Screen>;
   // Open where the coach is needed first: approvals, then reviews.
   const activeTab: CoachTab = tab ?? (pending.data?.length ? "team" : toReview.length ? "review" : "team");
 
@@ -90,7 +90,7 @@ function CoachClub() {
           ))}
           <View style={styles.gap} />
         </> : null}
-        <CoachAthletes onOpen={(athleteId) => { setNotice(""); setOpenAthlete(athleteId); }} onNotice={setNotice} />
+        <CoachAthletes onOpen={(athleteId) => { setNotice(""); openAthlete(athleteId); }} onNotice={setNotice} />
       </> : null}
 
       {activeTab === "review" ? <>
@@ -98,7 +98,7 @@ function CoachClub() {
         {feed.data?.length ? feed.data.map(({ activity, athleteName, athleteAvatarUrl, review }) => (
           <View key={activity.id} style={[styles.activityCard, !review && styles.activityOpen]}>
             <View style={styles.activityTop}>
-              <Pressable onPress={() => setOpenAthlete(activity.athleteId)} accessibilityLabel={`Abrir ficha de ${athleteName || "aluno"}`} style={styles.athleteIdentity}><ProfileAvatar uri={athleteAvatarUrl} name={athleteName} size={34} /><View><Text style={styles.cardTitle}>{athleteName || "Aluno"}</Text><Text style={styles.cardDetail}>{new Date(activity.completedAt).toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}</Text></View></Pressable>
+              <Pressable onPress={() => openAthlete(activity.athleteId)} accessibilityLabel={`Abrir ficha de ${athleteName || "aluno"}`} style={styles.athleteIdentity}><ProfileAvatar uri={athleteAvatarUrl} name={athleteName} size={34} /><View><Text style={styles.cardTitle}>{athleteName || "Aluno"}</Text><Text style={styles.cardDetail}>{new Date(activity.completedAt).toLocaleDateString("pt-BR", { day: "numeric", month: "short" })}</Text></View></Pressable>
               <Pill label={review ? "AVALIADO" : "AGUARDA"} tone={review ? "lime" : "coral"} />
             </View>
             <Text style={styles.activityTitle}>{activity.title}</Text>
