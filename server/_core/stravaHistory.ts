@@ -102,14 +102,14 @@ export async function saveStravaHistory(userId: number, consentAccepted = false)
 export async function deleteStravaHistory(userId: number) {
   const db = await requireDb();
   await db.delete(stravaActivityRecords).where(eq(stravaActivityRecords.userId, userId));
-  await db.update(stravaConnections).set({ historyConsentAt: null, mapConsentAt: null }).where(eq(stravaConnections.userId, userId));
+  await db.update(stravaConnections).set({ historyConsentAt: null, mapConsentAt: null, coachShareAt: null }).where(eq(stravaConnections.userId, userId));
   return { deleted: true as const };
 }
 
 export async function getRunMap(userId: number) {
   const db = await requireDb();
   const [connection] = await db
-    .select({ consentAt: stravaConnections.mapConsentAt })
+    .select({ consentAt: stravaConnections.mapConsentAt, coachShareAt: stravaConnections.coachShareAt })
     .from(stravaConnections)
     .where(eq(stravaConnections.userId, userId))
     .limit(1);
@@ -128,7 +128,20 @@ export async function getRunMap(userId: number) {
       totals.set(code, place);
     }
   }
-  return { connected: Boolean(connection), consented: Boolean(connection?.consentAt), places: [...totals.values()] };
+  return {
+    connected: Boolean(connection),
+    consented: Boolean(connection?.consentAt),
+    sharedWithCoach: Boolean(connection?.coachShareAt),
+    places: [...totals.values()],
+  };
+}
+
+export async function updateCoachShare(userId: number, share: boolean) {
+  const db = await requireDb();
+  const updated = await db.update(stravaConnections).set({ coachShareAt: share ? new Date() : null })
+    .where(eq(stravaConnections.userId, userId)).returning({ id: stravaConnections.id });
+  if (!updated.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Conecte sua conta Strava primeiro." });
+  return getRunMap(userId);
 }
 
 export async function updateRunMap(userId: number, consentAccepted: boolean) {

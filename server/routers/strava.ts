@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { STRAVA_REQUIRED_SCOPE } from "../../shared/strava";
-import { deleteStravaHistory, getRunMap, getStravaHistoryStatus, saveStravaHistory, updateRunMap } from "../_core/stravaHistory";
+import { deleteStravaHistory, getRunMap, getStravaHistoryStatus, saveStravaHistory, updateCoachShare, updateRunMap } from "../_core/stravaHistory";
 import { memberProcedure, router } from "../_core/trpc";
 import {
   beginStravaAuthorization,
@@ -108,6 +108,13 @@ export const stravaRouter = router({
     .mutation(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return updateRunMap(ctx.user.id, input.consentAccepted);
+    }),
+
+  updateCoachShare: memberProcedure
+    .input(z.object({ share: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      disableCaching(ctx.res);
+      return updateCoachShare(ctx.user.id, input.share);
     }),
 
   disconnect: memberProcedure.mutation(async ({ ctx }) => {

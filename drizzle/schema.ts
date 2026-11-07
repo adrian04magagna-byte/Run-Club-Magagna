@@ -182,6 +182,8 @@ export const stravaConnections = pgTable(
     consentVersion: varchar("consentVersion", { length: 32 }).notNull(),
     historyConsentAt: timestamp("historyConsentAt", { withTimezone: true }),
     mapConsentAt: timestamp("mapConsentAt", { withTimezone: true }),
+    /** The member let coaches see their map and Strava runs. Absent means private. */
+    coachShareAt: timestamp("coachShareAt", { withTimezone: true }),
     connectedAt: timestamp("connectedAt", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

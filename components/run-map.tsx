@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
 
@@ -32,13 +32,39 @@ function viewBox([x0, y0, x1, y1]: number[]) {
   return `${x0 - pad} ${y0 - pad} ${x1 - x0 + pad * 2} ${y1 - y0 + pad * 2}`;
 }
 
-function BrazilCanvas({ map, places, state, selected, onState, onSelect }: {
+function PlaceCard({ municipality, place, dock, onClose }: { municipality: MapMunicipality; place?: RunPlace; dock: "top" | "bottom"; onClose: () => void }) {
+  return <View style={[styles.placeCard, dock === "top" ? styles.placeTop : styles.placeBottom]}>
+    <View style={styles.placeHead}>
+      <View style={styles.rowCopy}>
+        <Text style={styles.placeTitle} numberOfLines={1}>{municipality.n} · {municipality.u}</Text>
+        <Text style={styles.placeSub} numberOfLines={1}>Região imediata de {municipality.i}</Text>
+      </View>
+      <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Fechar município" hitSlop={8} style={styles.placeClose}><Ionicons name="close" size={14} color={C.ink} /></Pressable>
+    </View>
+    <View style={styles.placeRun}>
+      <Text style={styles.placeRunValue}>{place ? km(place.meters) : "0 km"}</Text>
+      <Text style={styles.placeRunLabel}>{place ? `em ${place.runs} ${place.runs === 1 ? "corrida" : "corridas"}` : "ainda sem corrida"}</Text>
+    </View>
+    <View style={styles.placeFacts}>
+      <PlaceFact value={number.format(municipality.p)} label="habitantes" />
+      <PlaceFact value={`${number.format(Math.round(municipality.a))} km²`} label="área" />
+      <PlaceFact value={number.format(municipality.k)} label="hab./km²" />
+    </View>
+  </View>;
+}
+
+function PlaceFact({ value, label }: { value: string; label: string }) {
+  return <View style={styles.placeFact}><Text style={styles.placeFactValue} numberOfLines={1}>{value}</Text><Text style={styles.placeFactLabel}>{label}</Text></View>;
+}
+
+function BrazilCanvas({ map, places, state, selected, onState, onSelect, onClose }: {
   map: BrazilMap;
   places: Map<string, RunPlace>;
   state: string | null;
   selected: MapMunicipality | null;
   onState: (sigla: string) => void;
   onSelect: (municipality: MapMunicipality) => void;
+  onClose: () => void;
 }) {
   const allPaths = useMemo(() => map.municipios.map((item) => item.d).join(""), [map]);
   const painted = useMemo(() => {
@@ -73,37 +99,23 @@ function BrazilCanvas({ map, places, state, selected, onState, onSelect }: {
         </>}
       {selected ? <Path d={selected.d} fill="none" stroke={C.coral} strokeWidth={line * 1.6} /> : null}
     </Svg>
+    {selected ? <PlaceCard municipality={selected} place={places.get(selected.c)} dock={selected.o[1] > (box[1] + box[3]) / 2 ? "top" : "bottom"} onClose={onClose} /> : null}
   </View>;
 }
 
-export function RunMapScreen() {
-  const router = useRouter();
-  const { user } = useAuth();
-  const utils = trpc.useUtils();
+/** The map, its numbers and the lists, for any member's places. `children` sit below the map. */
+export function RunMapExplorer({ places: placeList, ranking, children }: { places: RunPlace[]; ranking: string; children?: ReactNode }) {
   const mapFile = useQuery({ queryKey: ["brazil-map"], queryFn: loadMap, staleTime: Infinity });
-  const runMap = trpc.strava.runMap.useQuery(undefined, { enabled: Boolean(user) });
-  const update = trpc.strava.updateRunMap.useMutation({ onSuccess: (data) => utils.strava.runMap.setData(undefined, data) });
-  const erase = trpc.strava.deleteHistory.useMutation({ onSuccess: () => { setAccepted(false); return utils.strava.runMap.invalidate(); } });
-  const [accepted, setAccepted] = useState(false);
   const [state, setState] = useState<string | null>(null);
   const [selected, setSelected] = useState<MapMunicipality | null>(null);
 
-  const placeList = runMap.data?.places;
-  const places = useMemo(() => new Map((placeList ?? []).map((place) => [place.code, place])), [placeList]);
-  const summary = useMemo(() => (mapFile.data ? summarizeMap(mapFile.data, placeList ?? []) : null), [mapFile.data, placeList]);
+  const places = useMemo(() => new Map(placeList.map((place) => [place.code, place])), [placeList]);
+  const summary = useMemo(() => (mapFile.data ? summarizeMap(mapFile.data, placeList) : null), [mapFile.data, placeList]);
   const chooseState = (sigla: string | null) => { setState(sigla); setSelected(null); };
-  const selectedPlace = selected ? places.get(selected.c) : undefined;
   const current = mapFile.data?.estados.find((item) => item.sigla === state);
   const shown = summary?.visited.filter((item) => !state || item.municipality.u === state).slice(0, 12) ?? [];
-  const busy = update.isPending || erase.isPending;
 
-  return <Screen scroll wide>
-    <View style={styles.header}>
-      <Text style={styles.eyebrow}>SEU BRASIL CORRIDO</Text>
-      <Text style={styles.title}>Mapa</Text>
-      <Text style={styles.subtitle}>Cada município ganha cor quando sua corrida do Strava passa por ele.</Text>
-    </View>
-
+  return <>
     {summary ? <View style={styles.stats}>
       <Stat value={number.format(summary.municipalities)} label={`de ${number.format(summary.totalMunicipalities)} municípios`} />
       <Stat value={km(summary.meters)} label="em municípios mapeados" />
@@ -118,7 +130,7 @@ export function RunMapScreen() {
             <Text style={styles.mapTitle}>{current?.nome ?? "Brasil"}</Text>
             {state ? <Pressable onPress={() => chooseState(null)} accessibilityRole="button" style={styles.backChip}><Ionicons name="arrow-back" size={13} color={C.ink} /><Text style={styles.backText}>Brasil</Text></Pressable> : <Text style={styles.hint}>Toque em um estado</Text>}
           </View>
-          <BrazilCanvas map={mapFile.data} places={places} state={state} selected={selected} onState={chooseState} onSelect={setSelected} />
+          <BrazilCanvas map={mapFile.data} places={places} state={state} selected={selected} onState={chooseState} onSelect={setSelected} onClose={() => setSelected(null)} />
           <View style={styles.legend}>{PAINT.map((color, index) => <View key={color} style={styles.legendItem}><View style={[styles.swatch, { backgroundColor: color }]} /><Text style={styles.legendText}>{PAINT_LABELS[index]}</Text></View>)}</View>
         </>
         : mapFile.isError
@@ -126,43 +138,13 @@ export function RunMapScreen() {
           : <View style={styles.loading}><ActivityIndicator color={C.ink} /></View>}
     </View>
 
-    {selected ? <View style={styles.detail}>
-      <Text style={styles.detailTitle}>{selected.n} · {selected.u}</Text>
-      <Text style={styles.detailSub}>Região imediata de {selected.i}</Text>
-      <View style={styles.detailGrid}>
-        <Stat value={number.format(selected.p)} label="habitantes" />
-        <Stat value={`${number.format(Math.round(selected.a))} km²`} label="área" />
-        <Stat value={number.format(selected.k)} label="hab. por km²" />
-        <Stat value={selectedPlace ? km(selectedPlace.meters) : "0 km"} label={selectedPlace ? `em ${selectedPlace.runs} ${selectedPlace.runs === 1 ? "corrida" : "corridas"}` : "ainda sem corrida"} />
-      </View>
-    </View> : null}
-
     {mapFile.data ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.states}>
       {mapFile.data.estados.map((item) => <Pressable key={item.sigla} accessibilityRole="button" onPress={() => chooseState(item.sigla)} style={[styles.stateChip, state === item.sigla && styles.stateChipOn]}><Text style={[styles.stateText, state === item.sigla && styles.stateTextOn]}>{item.sigla}</Text></Pressable>)}
     </ScrollView> : null}
 
-    <View style={styles.action}>
-      {!runMap.data?.connected
-        ? <><Text style={styles.actionTitle}>Conecte o Strava para pintar seu mapa</Text><PrimaryButton label="Conectar Strava" icon="flash" onPress={() => router.push("/strava")} /></>
-        : !runMap.data.consented
-          ? <>
-            <Text style={styles.actionTitle}>Pintar meu mapa</Text>
-            <Text style={styles.copy}>O app lê a rota de cada corrida no Strava só para descobrir os municípios. Guardamos os municípios, os quilômetros e os dados da corrida (data, distância, tempo e ritmo). A rota não fica guardada, e você pode apagar tudo quando quiser.</Text>
-            <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted }} onPress={() => setAccepted((value) => !value)} style={styles.consent}>
-              <View style={[styles.checkbox, accepted && styles.checkboxOn]}>{accepted ? <Ionicons name="checkmark" size={15} color={C.ink} /> : null}</View>
-              <Text style={styles.consentText}>Autorizo usar minhas corridas para pintar meu mapa.</Text>
-            </Pressable>
-            <ActionButton label="Pintar meu mapa" disabled={busy || !accepted} loading={update.isPending} onPress={() => update.mutate({ consentAccepted: true })} />
-          </>
-          : <>
-            <ActionButton label="Atualizar meu mapa" disabled={busy} loading={update.isPending} onPress={() => update.mutate({ consentAccepted: false })} />
-            {update.data?.truncated ? <Text style={styles.copy}>Mostrando até 1.000 atividades mais recentes.</Text> : null}
-            <Pressable disabled={busy} onPress={() => erase.mutate()} accessibilityRole="button"><Text style={styles.eraseText}>Apagar mapa e corridas guardadas</Text></Pressable>
-          </>}
-      {update.error ? <Text style={styles.error}>{update.error.message}</Text> : null}
-    </View>
+    {children}
 
-    {shown.length ? <><SectionTitle title="Onde você mais correu" />
+    {shown.length ? <><SectionTitle title={ranking} />
       <View style={styles.list}>{shown.map((item) => <Pressable key={item.code} onPress={() => { setState(item.municipality.u); setSelected(item.municipality); }} style={styles.row}>
         <View style={styles.rowCopy}><Text style={styles.rowTitle}>{item.municipality.n} · {item.municipality.u}</Text><Text style={styles.rowSub}>{number.format(item.municipality.p)} habitantes</Text></View>
         <Text style={styles.rowValue}>{km(item.meters)}</Text>
@@ -175,6 +157,57 @@ export function RunMapScreen() {
       </View>)}</View></> : null}
 
     <Text style={styles.source}>Fonte: IBGE, malha municipal, localidades e Censo Demográfico 2022. Os quilômetros por município são estimados pela rota.</Text>
+  </>;
+}
+
+export function RunMapScreen() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const utils = trpc.useUtils();
+  const runMap = trpc.strava.runMap.useQuery(undefined, { enabled: Boolean(user) });
+  const update = trpc.strava.updateRunMap.useMutation({ onSuccess: (data) => utils.strava.runMap.setData(undefined, data) });
+  const share = trpc.strava.updateCoachShare.useMutation({ onSuccess: (data) => utils.strava.runMap.setData(undefined, data) });
+  const erase = trpc.strava.deleteHistory.useMutation({ onSuccess: () => { setAccepted(false); return utils.strava.runMap.invalidate(); } });
+  const [accepted, setAccepted] = useState(false);
+  const busy = update.isPending || erase.isPending;
+  const shared = Boolean(runMap.data?.sharedWithCoach);
+
+  return <Screen scroll wide>
+    <View style={styles.header}>
+      <Text style={styles.eyebrow}>SEU BRASIL CORRIDO</Text>
+      <Text style={styles.title}>Mapa</Text>
+      <Text style={styles.subtitle}>Cada município ganha cor quando sua corrida do Strava passa por ele.</Text>
+    </View>
+
+    <RunMapExplorer places={runMap.data?.places ?? []} ranking="Onde você mais correu">
+      <View style={styles.action}>
+        {!runMap.data?.connected
+          ? <><Text style={styles.actionTitle}>Conecte o Strava para pintar seu mapa</Text><PrimaryButton label="Conectar Strava" icon="flash" onPress={() => router.push("/strava")} /></>
+          : !runMap.data.consented
+            ? <>
+              <Text style={styles.actionTitle}>Pintar meu mapa</Text>
+              <Text style={styles.copy}>O app lê a rota de cada corrida no Strava só para descobrir os municípios. Guardamos os municípios, os quilômetros e os dados da corrida (data, distância, tempo e ritmo). A rota não fica guardada, e você pode apagar tudo quando quiser.</Text>
+              <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted }} onPress={() => setAccepted((value) => !value)} style={styles.consent}>
+                <View style={[styles.checkbox, accepted && styles.checkboxOn]}>{accepted ? <Ionicons name="checkmark" size={15} color={C.ink} /> : null}</View>
+                <Text style={styles.consentText}>Autorizo usar minhas corridas para pintar meu mapa.</Text>
+              </Pressable>
+              <ActionButton label="Pintar meu mapa" disabled={busy || !accepted} loading={update.isPending} onPress={() => update.mutate({ consentAccepted: true })} />
+            </>
+            : <>
+              <ActionButton label="Atualizar meu mapa" disabled={busy} loading={update.isPending} onPress={() => update.mutate({ consentAccepted: false })} />
+              {update.data?.truncated ? <Text style={styles.copy}>Mostrando até 1.000 atividades mais recentes.</Text> : null}
+              <Pressable disabled={busy} onPress={() => erase.mutate()} accessibilityRole="button"><Text style={styles.eraseText}>Apagar mapa e corridas guardadas</Text></Pressable>
+            </>}
+        {runMap.data?.connected && user?.role !== "admin" ? (
+          <Pressable disabled={share.isPending} accessibilityRole="checkbox" accessibilityState={{ checked: shared }} onPress={() => share.mutate({ share: !shared })} style={styles.consent}>
+            <View style={[styles.checkbox, shared && styles.checkboxOn]}>{shared ? <Ionicons name="checkmark" size={15} color={C.ink} /> : null}</View>
+            <Text style={styles.consentText}>Deixar os treinadores verem meu mapa e minhas corridas do Strava. Você pode desmarcar quando quiser.</Text>
+          </Pressable>
+        ) : null}
+        {update.error ? <Text style={styles.error}>{update.error.message}</Text> : null}
+        {share.error ? <Text style={styles.error}>{share.error.message}</Text> : null}
+      </View>
+    </RunMapExplorer>
   </Screen>;
 }
 
@@ -204,15 +237,25 @@ const styles = StyleSheet.create({
   backChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: C.stone },
   backText: { color: C.ink, fontSize: 11, fontWeight: "800" },
   canvas: { width: "100%", maxWidth: 620, aspectRatio: 1, alignSelf: "center" },
+  placeCard: { position: "absolute", left: 0, right: 0, maxWidth: 340, alignSelf: "center", padding: 12, borderRadius: 16, backgroundColor: C.ink, shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  placeTop: { top: 0 },
+  placeBottom: { bottom: 0 },
+  placeHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  placeTitle: { color: C.white, fontSize: 15, fontWeight: "900" },
+  placeSub: { color: "#A9B4BA", fontSize: 11, fontWeight: "600", marginTop: 1 },
+  placeClose: { width: 26, height: 26, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: C.lime },
+  placeRun: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 8 },
+  placeRunValue: { color: C.lime, fontSize: 22, fontWeight: "900" },
+  placeRunLabel: { color: "#D6DCDF", fontSize: 12, fontWeight: "700" },
+  placeFacts: { flexDirection: "row", gap: 8, marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: "#34424B" },
+  placeFact: { flex: 1 },
+  placeFactValue: { color: C.white, fontSize: 12, fontWeight: "800" },
+  placeFactLabel: { color: "#A9B4BA", fontSize: 10, fontWeight: "600", marginTop: 1 },
   loading: { minHeight: 300, alignItems: "center", justifyContent: "center" },
   legend: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 8 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   swatch: { width: 12, height: 12, borderRadius: 4 },
   legendText: { color: C.inkSoft, fontSize: 11, fontWeight: "700" },
-  detail: { marginTop: 12, padding: 14, borderRadius: 20, backgroundColor: C.sky },
-  detailTitle: { color: C.ink, fontSize: 17, fontWeight: "900" },
-  detailSub: { color: C.inkSoft, fontSize: 12, fontWeight: "600", marginTop: 2, marginBottom: 10 },
-  detailGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   states: { gap: 6, paddingVertical: 12 },
   stateChip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 12, backgroundColor: C.stone },
   stateChipOn: { backgroundColor: C.ink },

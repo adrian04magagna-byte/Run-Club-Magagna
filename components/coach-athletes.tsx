@@ -7,13 +7,14 @@ import { DayPicker } from "@/components/coach-plans";
 import { BarChart, EmptyState, Segmented, formatDay, formatDuration, formatKm, formatPace } from "@/components/dashboard-ui";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { ReviewForm } from "@/components/review-form";
+import { RunMapExplorer } from "@/components/run-map";
 import { BackButton, C, CoachNote, SectionTitle } from "@/components/run-ui";
 import { localToday } from "@/hooks/use-insights";
 import { trpc } from "@/lib/trpc";
 import { startOfWeek } from "@/shared/insights";
 
 type Filter = "all" | "mine" | "none" | "overdue" | "review";
-type SheetTab = "overview" | "workouts" | "runs";
+type SheetTab = "overview" | "workouts" | "runs" | "map";
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
 const EFFORT_LABELS = { easy: "Leve", challenging: "Desafiador", intense: "Intenso" } as const;
@@ -39,11 +40,11 @@ function coachesText(coaches: { name: string; isMe: boolean }[]) {
   return `Acompanhado por ${text}`;
 }
 
-function stravaNote(isMe: boolean, status: "ok" | "off" | "failed") {
-  if (!isMe) return "O histórico Strava é particular de cada aluno e não aparece aqui. Estes números vêm dos treinos registrados no clube.";
-  if (status === "ok") return "Estes números incluem as suas corridas do Strava. Só você vê esse histórico.";
+function stravaNote(isMe: boolean, status: "ok" | "off" | "failed" | "private", firstName: string) {
+  if (status === "ok") return isMe ? "Estes números incluem as suas corridas do Strava. Só você vê esse histórico." : `${firstName} autorizou os treinadores a verem as corridas do Strava, e elas entram nestes números.`;
   if (status === "failed") return "Não foi possível consultar o Strava agora, então estes números mostram só os treinos do clube.";
-  return "Conecte seu Strava no Perfil para suas corridas aparecerem aqui.";
+  if (status === "private") return `${firstName} ainda não autorizou os treinadores a verem o Strava. A autorização fica na aba Mapa de ${firstName}.`;
+  return isMe ? "Conecte seu Strava no Perfil para suas corridas aparecerem aqui." : `${firstName} ainda não conectou o Strava.`;
 }
 
 /** Every athlete in the club, whichever coach follows them, with their week at a glance. */
@@ -172,7 +173,7 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
     );
   }
 
-  const { athlete, summary, totals, weeks, assignments, activities, strava } = detail.data;
+  const { athlete, summary, totals, weeks, assignments, activities, strava, places } = detail.data;
   const firstName = (athlete.name || "Aluno").split(" ")[0];
   const open = assignments.filter((item) => item.status === "assigned").sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate));
   const done = assignments.filter((item) => item.status !== "assigned");
@@ -259,6 +260,7 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
           { value: "overview", label: "Resumo" },
           { value: "workouts", label: "Treinos", badge: summary.overdue || undefined },
           { value: "runs", label: "Corridas", badge: unreviewed || undefined },
+          { value: "map", label: "Mapa" },
         ]}
       />
       <View style={styles.gap} />
@@ -297,7 +299,7 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
           </>}
           <Text style={styles.helper}>{lastRunText(summary.daysSinceLastRun)}.</Text>
           <View style={styles.gap} />
-          <CoachNote label="STRAVA">{stravaNote(athlete.isMe, strava.status)}</CoachNote>
+          <CoachNote label="STRAVA">{stravaNote(athlete.isMe, strava.status, firstName)}</CoachNote>
         </View>
       ) : null}
 
@@ -319,6 +321,12 @@ export function AthleteSheet({ athleteId, onBack }: { athleteId: number; onBack:
             </View>
           )) : <Text style={styles.helper}>Nenhum treino concluído ainda.</Text>}
         </View>
+      ) : null}
+
+      {tab === "map" ? (
+        strava.status === "private" || strava.status === "off"
+          ? <EmptyState icon="earth-outline" title="Mapa indisponível" text={stravaNote(athlete.isMe, strava.status, firstName)} />
+          : <RunMapExplorer places={places} ranking={athlete.isMe ? "Onde você mais correu" : `Onde ${firstName} mais correu`} />
       ) : null}
 
       {tab === "runs" && strava.runs.length ? (

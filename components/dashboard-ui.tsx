@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
   segment: { flexDirection: "row", padding: 4, gap: 4, borderRadius: 16, backgroundColor: C.stone },
   segmentItem: { flex: 1, minHeight: 36, alignItems: "center", justifyContent: "center", borderRadius: 12 },
   segmentItemActive: { backgroundColor: C.ink, boxShadow: "0px 4px 10px rgba(11, 23, 32, 0.18)" },
-  segmentItemRow: { flexDirection: "row", gap: 6, paddingHorizontal: 6 },
+  segmentItemRow: { flexDirection: "row", flexGrow: 1, flexShrink: 0, flexBasis: "auto", gap: 6, paddingHorizontal: 6 },
   segmentBadge: { minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: C.coral },
   segmentBadgeActive: { backgroundColor: C.lime },
   segmentBadgeText: { color: C.ink, fontSize: 10, fontWeight: "900" },

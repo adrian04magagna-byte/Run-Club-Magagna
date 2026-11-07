@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -7,6 +7,7 @@ import {
   activityReviews,
   athleteAccounts,
   coachAthletes,
+  stravaActivityRecords,
   stravaConnections,
   users,
   workoutAssignments,
@@ -15,6 +16,7 @@ import {
 } from "../../drizzle/schema";
 import { athleteSummary } from "../../shared/club-athletes";
 import { addDays, paceSecondsPerKm, weeklyBuckets, type TrainingEntry } from "../../shared/insights";
+import { getRunMap } from "../_core/stravaHistory";
 import { getStravaConnectionStatus } from "../_core/stravaOAuth";
 import { adminProcedure, athleteProcedure, router } from "../_core/trpc";
 import { ALL_TIME_MAX_PAGES, stravaRunEntries } from "./insights";
@@ -98,14 +100,29 @@ async function ownAthleteId(db: Db, coachId: number) {
   return student?.id ?? coachId;
 }
 
-/** A coach reading their own runs. Strava data of anyone else stays private to them. */
-async function ownStravaRuns(coachId: number) {
-  if (!(await getStravaConnectionStatus(coachId)).connected) return { entries: [] as TrainingEntry[], status: "off" as const };
+/** Strava runs read live. Callers check the coach may see them: their own, or a member who shared. */
+async function liveStravaRuns(userId: number) {
+  if (!(await getStravaConnectionStatus(userId)).connected) return { entries: [] as TrainingEntry[], status: "off" as const };
   try {
-    return { entries: (await stravaRunEntries(coachId, 0, ALL_TIME_MAX_PAGES)).entries, status: "ok" as const };
+    return { entries: (await stravaRunEntries(userId, 0, ALL_TIME_MAX_PAGES)).entries, status: "ok" as const };
   } catch {
     return { entries: [] as TrainingEntry[], status: "failed" as const };
   }
+}
+
+/** Saved runs of members who shared with coaches. The list avoids Strava's few reads per 15 minutes. */
+async function sharedSavedRuns(db: Db, athleteIds: number[]) {
+  if (!athleteIds.length) return [];
+  const rows = await db.select({ athleteId: stravaActivityRecords.userId, startDate: stravaActivityRecords.startDate, summary: stravaActivityRecords.summary })
+    .from(stravaActivityRecords)
+    .innerJoin(stravaConnections, eq(stravaConnections.userId, stravaActivityRecords.userId))
+    .where(and(inArray(stravaActivityRecords.userId, athleteIds), isNotNull(stravaConnections.coachShareAt)));
+  return rows.map(({ athleteId, startDate, summary }) => ({
+    athleteId,
+    date: (summary.startDateLocal || startDate.toISOString()).slice(0, 10),
+    distanceMeters: Math.round(summary.distanceMeters),
+    reviewed: true,
+  }));
 }
 
 /** Approved athletes of the whole club, whoever follows them, plus the requesting coach when given. */
@@ -212,10 +229,11 @@ export const clubRouter = router({
     const ownId = await ownAthleteId(db, ctx.user.id);
     const athletes = await approvedAthletes(db, undefined, ownId);
     const ids = athletes.map((athlete) => athlete.userId);
-    const [followers, runs, own, sends] = await Promise.all([
+    const [followers, runs, own, saved, sends] = await Promise.all([
       followersOf(db, ids, ctx.user.id),
       sharedRuns(db, ids),
-      ownStravaRuns(ctx.user.id),
+      liveStravaRuns(ctx.user.id),
+      sharedSavedRuns(db, ids.filter((id) => id !== ownId)),
       ids.length ? db.select({ athleteId: workoutAssignments.athleteId, scheduledDate: workoutAssignments.scheduledDate, status: workoutAssignments.status })
         .from(workoutAssignments)
         .where(and(
@@ -240,6 +258,7 @@ export const clubRouter = router({
               reviewed: Boolean(run.review),
             })),
             ...(athlete.userId === ownId ? own.entries.map(({ date, distanceMeters }) => ({ date, distanceMeters, reviewed: true })) : []),
+            ...saved.filter((run) => run.athleteId === athlete.userId),
           ],
           input.today,
         ),
@@ -254,10 +273,15 @@ export const clubRouter = router({
     const athlete = (await approvedAthletes(db, input.athleteId, ownId))[0];
     if (!athlete) throw new TRPCError({ code: "NOT_FOUND", message: "Aluno não encontrado." });
     const isMe = athlete.userId === ownId;
+    const [connection] = await db.select({ coachShareAt: stravaConnections.coachShareAt }).from(stravaConnections)
+      .where(eq(stravaConnections.userId, athlete.userId)).limit(1);
+    const canSeeStrava = isMe || Boolean(connection?.coachShareAt);
     const [followers, runs, own, sends] = await Promise.all([
       followersOf(db, [athlete.userId], ctx.user.id),
       sharedRuns(db, [athlete.userId]),
-      isMe ? ownStravaRuns(ctx.user.id) : { entries: [] as TrainingEntry[], status: "off" as const },
+      canSeeStrava
+        ? liveStravaRuns(isMe ? ctx.user.id : athlete.userId)
+        : { entries: [] as TrainingEntry[], status: connection ? "private" as const : "off" as const },
       db.select({
         id: workoutAssignments.id,
         scheduledDate: workoutAssignments.scheduledDate,
@@ -313,6 +337,7 @@ export const clubRouter = router({
       },
       weeks: weeklyBuckets(allEntries, input.today, 8),
       strava: { status: own.status, runs: own.entries },
+      places: canSeeStrava ? (await getRunMap(athlete.userId)).places : [],
       assignments: sends.map(({ coachName, coachProfileName, ...send }) => ({
         ...send,
         coachName: coachProfileName || coachName || "Treinador",

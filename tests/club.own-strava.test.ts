@@ -14,7 +14,8 @@ vi.mock("../server/_core/stravaOAuth", async (original) => ({
 }));
 
 const { eq } = await import("drizzle-orm");
-const { stravaConnections, users } = await import("../drizzle/schema");
+const { stravaActivityRecords, stravaConnections, users } = await import("../drizzle/schema");
+const { updateCoachShare } = await import("../server/_core/stravaHistory");
 const { getDb } = await import("../server/db");
 const { appRouter } = await import("../server/routers");
 const { createContext } = await import("../server/_core/context");
@@ -32,6 +33,7 @@ describe("a coach's own Strava runs in the athlete list", () => {
   let coach: Awaited<ReturnType<typeof callerFor>>;
   let twinId = 0;
   let otherId = 0;
+  let sharerId = 0;
 
   beforeAll(async () => {
     strava.list.mockResolvedValue({ items: [run], truncated: false });
@@ -40,10 +42,12 @@ describe("a coach's own Strava runs in the athlete list", () => {
     coach = await callerFor(registered.sessionToken);
     await anonymous.account.register({ name: "Coach Aluno", email: "gemeo@example.com", password: "senha-forte-123" });
     await anonymous.account.register({ name: "Outra", email: "outra@example.com", password: "senha-forte-123" });
+    await anonymous.account.register({ name: "Sara", email: "sara@example.com", password: "senha-forte-123" });
     const pending = await coach.club.pendingAthletes();
     for (const item of pending) await coach.club.approveAthlete({ athleteId: item.userId });
     twinId = pending.find((item) => item.email === "gemeo@example.com")!.userId;
     otherId = pending.find((item) => item.email === "outra@example.com")!.userId;
+    sharerId = pending.find((item) => item.email === "sara@example.com")!.userId;
   });
 
   it("counts the coach's runs on the coach account while there is no student profile", async () => {
@@ -63,6 +67,27 @@ describe("a coach's own Strava runs in the athlete list", () => {
     const merged = await coach.club.clubAthletes({ today });
     expect(merged.filter((item) => item.isMe)).toEqual([expect.objectContaining({ userId: twinId, isCoachAccount: false })]);
     expect(merged.some((item) => item.userId === me.id)).toBe(false);
+  });
+
+  it("shows a student's Strava runs and map only after they share them", async () => {
+    const db = (await getDb())!;
+    const values = { stravaAthleteHash: "another-person", encryptedTokenEnvelope: "x", scopes: "read", tokenExpiresAt: new Date(), consentedAt: new Date(), consentVersion: "1" };
+    await db.insert(stravaConnections).values({ ...values, userId: sharerId });
+    await db.insert(stravaActivityRecords).values({ userId: sharerId, stravaActivityId: "1", startDate: new Date("2026-11-10T09:00:00Z"), summary: run as never, places: { "4314902": 8000 } });
+
+    await expect(coach.club.athleteDetail({ athleteId: sharerId, today })).resolves.toMatchObject({
+      strava: { status: "private", runs: [] }, places: [], totals: { runs: 0 },
+    });
+    expect((await coach.club.clubAthletes({ today })).find((item) => item.userId === sharerId)?.summary.weekDistanceMeters).toBe(0);
+
+    await updateCoachShare(sharerId, true);
+    await expect(coach.club.athleteDetail({ athleteId: sharerId, today })).resolves.toMatchObject({
+      strava: { status: "ok", runs: [{ title: "Rodagem" }] }, places: [{ code: "4314902", meters: 8000 }], totals: { runs: 1 },
+    });
+    expect((await coach.club.clubAthletes({ today })).find((item) => item.userId === sharerId)?.summary.weekDistanceMeters).toBe(8000);
+
+    await updateCoachShare(sharerId, false);
+    await expect(coach.club.athleteDetail({ athleteId: sharerId, today })).resolves.toMatchObject({ strava: { status: "private", runs: [] }, places: [] });
   });
 
   it("never shows those runs on someone else's sheet", async () => {
