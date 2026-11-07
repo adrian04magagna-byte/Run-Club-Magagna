@@ -1,40 +1,61 @@
 {
   "version": "7",
-  "dialect": "mysql",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "5",
-      "when": 1763372440610,
-      "tag": "0000_elite_eternals",
+      "version": "7",
+      "when": 1793811819131,
+      "tag": "0000_init",
       "breakpoints": true
     },
     {
       "idx": 1,
-      "version": "5",
-      "when": 1791581878266,
-      "tag": "0001_demonic_nextwave",
+      "version": "7",
+      "when": 1793812319311,
+      "tag": "0001_enable_rls",
       "breakpoints": true
     },
     {
       "idx": 2,
-      "version": "5",
-      "when": 1791583199655,
-      "tag": "0002_grey_thena",
+      "version": "7",
+      "when": 1793814052824,
+      "tag": "0002_api_role_policies",
       "breakpoints": true
     },
     {
       "idx": 3,
-      "version": "5",
-      "when": 1791597113340,
-      "tag": "0003_absent_black_cat",
+      "version": "7",
+      "when": 1793990444495,
+      "tag": "0003_last_klaw",
       "breakpoints": true
     },
     {
       "idx": 4,
-      "version": "5",
-      "when": 1791648200705,
-      "tag": "0004_watery_apocalypse",
+      "version": "7",
+      "when": 1793990780671,
+      "tag": "0004_milky_nightcrawler",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794057233764,
+      "tag": "0005_marvelous_thundra",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794057797869,
+      "tag": "0006_material_salo",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794059758562,
+      "tag": "0007_safe_baron_zemo",
       "breakpoints": true
     }
   ]

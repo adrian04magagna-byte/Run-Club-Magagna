@@ -6,16 +6,14 @@ import { z } from "zod";
 import { athleteAccounts, users } from "../../drizzle/schema";
 import { hashPassword, verifyPassword } from "../security/passwords";
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
-import { getSessionCookieName, getSessionCookieOptions } from "../_core/cookies";
-import { sdk } from "../_core/sdk";
-import { getDb } from "../db";
-import { ENV } from "../_core/env";
+import { createSessionToken, touchLastSignedIn } from "../_core/session";
+import { getDb, getUserByOpenId, isUniqueViolation } from "../db";
+import { ENV, isCoachEmail } from "../_core/env";
 import { getProfileAvatarUrl, uploadProfileAvatar } from "../storage/profile-avatars";
 
-const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 const emailSchema = z.string().trim().email().max(320).transform((email) => email.toLowerCase());
 
-async function accountUser(user: { id: number; openId: string; name: string | null; profileName?: string | null; avatarKey?: string | null; email: string | null; loginMethod: string | null; lastSignedIn: Date; role: "user" | "admin" }) {
+export async function accountUser(user: { id: number; openId: string; name: string | null; profileName?: string | null; avatarKey?: string | null; email: string | null; loginMethod: string | null; lastSignedIn: Date; role: "user" | "admin" }) {
   return {
     id: user.id,
     openId: user.openId,
@@ -92,55 +90,74 @@ export const accountRouter = router({
       name: z.string().trim().min(2).max(120),
       email: emailSchema,
       password: z.string().min(10).max(128),
+      coachCode: z.string().trim().max(128).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "O serviço de cadastro está temporariamente indisponível." });
-      if (ENV.coachEmail && input.email === ENV.coachEmail.trim().toLowerCase()) {
-        throw new TRPCError({ code: "CONFLICT", message: "Esse e-mail é reservado para a conta do treinador. Use o botão de acesso Manus." });
+      const isCoach = isCoachEmail(input.email);
+      if (isCoach && (!ENV.coachSignupCode || input.coachCode !== ENV.coachSignupCode)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Esse e-mail é reservado para o treinador. Informe o código de acesso do treinador ou entre com o Google." });
       }
 
       const existing = await db.select({ id: athleteAccounts.id }).from(athleteAccounts)
         .where(eq(athleteAccounts.normalizedEmail, input.email)).limit(1);
-      if (existing.length) throw new TRPCError({ code: "CONFLICT", message: "Já existe uma conta de aluno com esse e-mail." });
-      const existingUser = await db.select({ id: users.id }).from(users)
-        .where(eq(users.email, input.email)).limit(1);
-      if (existingUser.length) throw new TRPCError({ code: "CONFLICT", message: "Esse e-mail já está associado a uma conta. Entre com ela ou fale com o treinador." });
+      if (existing.length) throw new TRPCError({ code: "CONFLICT", message: "Já existe uma conta com esse e-mail. Entre com ela." });
 
       const passwordHash = await hashPassword(input.password);
+      let openId = "";
       try {
-        await db.transaction(async (tx) => {
-          const inserted = await tx.insert(users).values({
-            openId: `student_${randomUUID()}`,
-            name: input.name,
-            email: input.email,
-            loginMethod: "email_password",
-            role: "user",
-          }).$returningId();
-          const userId = inserted[0]?.id;
-          if (!userId) throw new Error("Não foi possível criar a conta.");
+        openId = await db.transaction(async (tx) => {
+          // A coach who first signed in with Google already has a user row; attach the password to it.
+          const existingUser = await tx.select({ id: users.id, openId: users.openId }).from(users)
+            .where(eq(users.email, input.email)).limit(1);
+          if (existingUser.length && !isCoach) {
+            throw new TRPCError({ code: "CONFLICT", message: "Esse e-mail já está associado a uma conta. Entre com ela ou fale com o treinador." });
+          }
+          let userId = existingUser[0]?.id;
+          let userOpenId = existingUser[0]?.openId;
+          if (!userId) {
+            const inserted = await tx.insert(users).values({
+              openId: `email_${randomUUID()}`,
+              name: input.name,
+              email: input.email,
+              loginMethod: "email_password",
+              role: isCoach ? "admin" : "user",
+            }).returning({ id: users.id, openId: users.openId });
+            userId = inserted[0]?.id;
+            userOpenId = inserted[0]?.openId;
+          }
+          if (!userId || !userOpenId) throw new Error("Não foi possível criar a conta.");
           await tx.insert(athleteAccounts).values({
             userId,
             normalizedEmail: input.email,
             passwordHash,
-            status: "pending",
+            status: isCoach ? "approved" : "pending",
           });
+          return userOpenId;
         });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
-        if (String(error).includes("Duplicate entry")) {
+        if (isUniqueViolation(error)) {
           throw new TRPCError({ code: "CONFLICT", message: "Já existe uma conta com esse e-mail." });
         }
         console.error("[Account] Registration failed");
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível concluir o cadastro agora." });
       }
 
-      return { status: "pending" as const };
+      if (!isCoach) return { status: "pending" as const };
+      const user = await getUserByOpenId(openId);
+      if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível concluir o cadastro agora." });
+      return {
+        status: "authenticated" as const,
+        user: await accountUser(user),
+        sessionToken: await createSessionToken(openId),
+      };
     }),
 
   signIn: publicProcedure
     .input(z.object({ email: emailSchema, password: z.string().min(1).max(128) }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "O serviço de login está temporariamente indisponível." });
 
@@ -163,28 +180,20 @@ export const accountRouter = router({
         .limit(1);
 
       const account = rows[0];
-      // Use one message for unknown email, wrong password and non-approved accounts.
-      if (!account || !(await verifyPassword(input.password, account.passwordHash))) {
+      // Use one message for unknown email, wrong password and Google-only accounts.
+      if (!account || !account.passwordHash || !(await verifyPassword(input.password, account.passwordHash))) {
         throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha incorretos." });
       }
-      if (account.status === "pending") return { status: "pending" as const };
-      if (account.status === "rejected") return { status: "rejected" as const };
+      if (account.role !== "admin") {
+        if (account.status === "pending") return { status: "pending" as const };
+        if (account.status === "rejected") return { status: "rejected" as const };
+      }
 
-      const sessionToken = await sdk.createSessionToken(account.openId, {
-        name: account.name || "Aluno",
-        expiresInMs: SESSION_LIFETIME_MS,
-      });
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.cookie(getSessionCookieName(ctx.req), sessionToken, {
-        ...cookieOptions,
-        maxAge: SESSION_LIFETIME_MS,
-      });
-      await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, account.id));
-
+      await touchLastSignedIn(account.id);
       return {
         status: "authenticated" as const,
         user: await accountUser({ ...account, lastSignedIn: new Date() }),
-        sessionToken: ctx.req.headers["x-runclub-platform"] === "native" ? sessionToken : null,
+        sessionToken: await createSessionToken(account.openId),
       };
     }),
 });

@@ -1,64 +1,117 @@
-# Run Club Magagna — pacote de migração
+# Run Club Magagna — como rodar e publicar
 
-Este arquivo contém o código-fonte do app móvel, API, schema/migrations, testes e assets do **Run Club Magagna** no checkpoint `af97506`. Foi preparado para transferência a outra plataforma cloud.
+O app saiu da plataforma Manus. Agora roda assim:
 
-## Importante: código-fonte não equivale a migração completa do ambiente
+| Parte | Onde | Observação |
+| --- | --- | --- |
+| App web (Expo) | GitHub Pages | Publicado pelo workflow `.github/workflows/pages.yml` a cada push na `main`. |
+| API (Express + tRPC) | Vercel | `scripts/build-vercel.mjs` empacota `server/_core/vercel.ts` numa função ESM (Build Output API). |
+| Banco | Supabase (Postgres) | Schema em `drizzle/schema.ts`, migrations em `drizzle/*.sql`. |
+| Fotos de perfil | Tabela `profile_avatars` | Servidas por `/api/avatars/...` com URL assinada de 1–2 h. |
+| Login | E-mail e senha + Google | Sessão por token Bearer (JWT) guardado no aparelho/navegador. |
 
-O ZIP não transfere contas, alunos, treinos, avaliações, fotos, sessões, banco de dados, tokens Strava, segredos ou histórico Git. Isso é intencional: são dados privados e credenciais não devem circular dentro de um arquivo compactado. O destino precisará de seu próprio banco MySQL, armazenamento de fotos, variáveis de ambiente, domínio HTTPS e serviços de autenticação/API.
+## Rodar no computador
 
-O projeto atual usa partes específicas da plataforma Manus: login/OAuth Manus (`server/_core/oauth.ts`, `server/_core/sdk.ts`), algumas APIs gerenciadas (LLM, notificações e serviços em `server/_core/`) e armazenamento de objetos para avatares (`server/storage/profile-avatars.ts`). A nova nuvem precisa oferecer serviços compatíveis ou essas integrações precisam ser adaptadas para os serviços dela. O login Manus não é substituído automaticamente pelo login OAuth do Strava: são fluxos diferentes. Mantenha um provedor de login de usuários separado do vínculo Strava.
+```bash
+pnpm install
+cp .env.example .env   # preencha SESSION_SECRET, COACH_EMAIL e COACH_SIGNUP_CODE
+pnpm dev               # API em :3000 e app web em :8081
+```
 
-## Estrutura incluída
+Com `DATABASE_URL=pglite:./.local-db` o banco é um Postgres embutido criado na pasta `.local-db`
+(não precisa instalar nada; as migrations rodam sozinhas). Apague a pasta para recomeçar do zero.
 
-- `app/`, `components/`, `hooks/`, `lib/`, `constants/`: aplicativo Expo / React Native.
-- `server/`, `shared/`: API Express/tRPC e lógica compartilhada, incluindo OAuth Strava.
-- `drizzle/`: schema Drizzle e migrations SQL versionadas.
-- `assets/`, `public/`: imagens e assets usados pelo app.
-- `tests/`, `package.json`, `pnpm-lock.yaml`, configurações: testes e configuração do projeto.
-- `plan.md`, `TODO.md` e prompt de produto: decisões e escopo do app.
+Verificações: `pnpm check`, `pnpm lint`, `pnpm test` (inclui o fluxo completo treinador → aluno num Postgres embutido).
 
-## Requisitos e primeira execução
+## Contas
 
-Use Node.js LTS compatível com Expo SDK do projeto, pnpm `9.12.0`, MySQL compatível com `mysql2`/Drizzle e HTTPS público. Instale as dependências com `pnpm install --frozen-lockfile`. Para desenvolvimento, configure primeiro as integrações e variáveis necessárias, depois rode `pnpm dev`; o starter usa Metro/Expo Web na porta `8081` e API na `3000`. Rode `pnpm check`, `pnpm lint`, `pnpm test` e `pnpm build` para verificar o código. A plataforma de destino deve configurar separadamente como servir o frontend Expo Web e a API Express; o script `build` existente compila a API e não é, sozinho, uma configuração universal de deploy.
+- **Aluno**: cadastra-se com e-mail e senha, ou usa "Continuar com Google". Fica pendente até o treinador aprovar.
+- **Treinador**: cada e-mail em `COACH_EMAIL` (lista separada por vírgula) vira treinador automaticamente.
+  Cada treinador vê os alunos que ele mesmo aprovou; pedidos pendentes aparecem para todos.
+  - Com Google: basta entrar com a conta Google desse e-mail.
+  - Com e-mail e senha: na tela de login, "É o treinador? Primeiro acesso", informando o código `COACH_SIGNUP_CODE`.
+    O código impede que outra pessoa crie a conta com o e-mail do treinador antes dele.
 
-Antes do primeiro uso com banco, revise `drizzle.config.ts`, configure `DATABASE_URL` no ambiente protegido e aplique as migrations conforme o processo da plataforma de destino. Não rode migrations contra o banco original ou produção sem backup e autorização. O banco de destino começa vazio, a menos que os dados sejam migrados por um processo separado.
+## Publicar na VM Oracle (produção atual)
 
-## Variáveis de ambiente
+App web e API rodam na VM `vm_deon` (Ubuntu ARM, 193.123.122.30), ao lado dos outros sites dela:
 
-` .env.example` lista nomes de variáveis e placeholders vazios; nunca preencha segredos nesse arquivo nem os envie por chat. Cadastre-os no gerenciador seguro de secrets do provedor. Alguns recursos atuais exigem integração com a plataforma Manus e não funcionarão no novo provedor até serem portados:
+- Endereço: https://runclubmagagna.com.br (o antigo runclub.193-123-122-30.sslip.io redireciona para ele).
+- nginx: `/etc/nginx/sites-available/runclub` serve `~/run-club/web` e encaminha `/api/` para `127.0.0.1:3100`.
+- API: `~/run-club/api/index.mjs` (arquivo único gerado por `pnpm build`), processo `run-club-api` no pm2, configuração em `~/run-club/api/.env` (permissão 600).
 
-- Autenticação atual: `MANUS_PROJECT_ID`, `MANUS_JWT_SECRET`, `MANUS_OAUTH_API_URL` e `MANUS_OAUTH_PORTAL_URL`; use no cloud novo somente se ele ainda oferecer esses serviços. Caso contrário, implemente/adapte um provedor de login e sessões.
-- Banco: `DATABASE_URL` MySQL.
-- Identidade do Treinador: `COACH_EMAIL` ou `OWNER_OPEN_ID`, vinculada ao provedor de login escolhido.
-- API Strava: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET` e `STRAVA_TOKEN_ENCRYPTION_KEY` apenas no servidor. A chave criptográfica deve ter pelo menos 32 bytes fortes, gerados aleatoriamente. Não gere uma chave fraca nem a compartilhe por mensagens.
-- URL pública: `EXPO_PUBLIC_API_BASE_URL` deve apontar para a API HTTPS pública; confirme no provedor de build que essa variável pública não contém segredos.
-- Fotos e alguns serviços: `MANUS_API_URL`, `MANUS_API_KEY`, `BUILT_IN_FORGE_API_URL` e `BUILT_IN_FORGE_API_KEY` pertencem às integrações Manus. Não reutilize esses nomes/valores às cegas no novo cloud; adapte para o storage/serviços de destino.
+Atualizar depois de mudanças no código:
 
-A configuração Expo pública é compilada para o app; não coloque Client Secret, chave criptográfica, chave de sessão, senha de banco ou chave privada em `EXPO_PUBLIC_*`.
+```bash
+pnpm build
+EXPO_PUBLIC_API_BASE_URL=https://runclubmagagna.com.br EXPO_BASE_URL= npx expo export --platform web
+tar -czf - dist-server/index.mjs | ssh vm_deon 'tar -xzf - -C ~/run-club/api --strip-components=1 && pm2 restart run-club-api'
+tar -czf - -C dist . | ssh vm_deon 'rm -rf ~/run-club/web/* && tar -xzf - -C ~/run-club/web && chmod -R a+rX ~/run-club/web'
+```
 
-## Strava após a mudança de domínio
+## Publicar (alternativa: GitHub Pages + Vercel)
 
-A integração busca as atividades do próprio aluno sob demanda; não envia atividades Strava ao Treinador e não as persiste como histórico no banco. Ao trocar de host, recadastre no painel de desenvolvedor Strava o **domínio público da API de destino** como Authorization Callback Domain. Configure no Strava e no novo cloud o callback HTTPS completo correspondente ao caminho implementado, `/api/strava/oauth/callback`, e confira a URI exata enviada no parâmetro `redirect_uri`. O endereço temporário Manus/Preview não deve ser reutilizado no cloud novo.
+### 1. Supabase (banco)
 
-Se for uma migração de código apenas, sem transferir banco, os alunos terão que autorizar novamente suas contas Strava no novo ambiente. Se houver migração de dados do banco, os tokens existentes só podem ser lidos com a mesma chave criptográfica Strava — transfira-a por um canal seguro de secrets, não dentro do ZIP. Faça a migração com backup, verifique a política do provedor e remova estados OAuth pendentes. Nunca copie tokens para logs ou arquivos. O cadastro/capacidade e a revisão do app Strava dependem do painel da Strava; a conexão configurada num cloud não se transfere automaticamente para outro domínio.
+O projeto `run-club-magagna` (região São Paulo) já tem o schema aplicado, com RLS ligado em todas as
+tabelas: a API do Supabase não expõe nada, só a nossa API acessa o banco.
 
-## Checklist no provedor de destino
+A API conecta com um usuário próprio, `runclub_api`, pelo **Transaction pooler**
+(`aws-1-sa-east-1.pooler.supabase.com:6543`, usuário `runclub_api.abbvlkmlkruxdcvogxkn`).
+Ele só lê e grava as tabelas do app (políticas RLS em `drizzle/0002_api_role_policies.sql`).
+A string fica apenas no `DATABASE_URL` da Vercel. Para trocar a senha:
+`ALTER ROLE runclub_api PASSWORD '...'` no SQL Editor e atualize o `DATABASE_URL`.
+Atenção: a conexão direta (`db.<ref>.supabase.co`) só funciona por IPv6 e não serve para a Vercel.
 
-1. Importe e extraia o ZIP; instale a versão de Node/pnpm indicada.
-2. Escolha e configure o provedor de autenticação de usuários e adapte a autenticação Manus se necessário. Não use Strava como login da conta do Run Club sem uma decisão de produto e implementação próprias.
-3. Configure um MySQL novo, secrets de servidor e storage privado para fotos; revise/migre schema e dados separadamente.
-4. Defina URL pública HTTPS da API, do frontend e do callback OAuth; atualize redirect URIs, CORS, cookies e links profundos para os domínios novos.
-5. Reconfigure Strava Client ID/Secret e chave de criptografia no cofre de secrets do destino. Não inclua esses valores no repositório ou ZIP.
-6. Execute as verificações e teste login, aprovações, agenda, avaliações, fotos e OAuth Strava com uma conta de teste autorizada, sem usar dados reais de aluno sem consentimento.
+Migrations futuras: altere `drizzle/schema.ts`, rode `npx drizzle-kit generate` e aplique o SQL gerado no Supabase.
 
-## Segurança
+### 2. Vercel (API)
 
-Este pacote deve ser tratado como código-fonte, mas mesmo assim revise-o antes de torná-lo público. Não publique dados de alunos nem arquivos `.env`. O arquivo `.env.example` contém somente placeholders. O ZIP não inclui `node_modules`, `.git`, cache Expo, saída compilada, dump de banco, uploads, credenciais ou tokens.
+Projeto atual: `run-club-magagna-api` (time MAGAGNATECH), em https://run-club-magagna-api.vercel.app.
+Publique com `vercel deploy --prod` (o `vercel.json` já define instalação e build). Variáveis:
 
-## Atualização: hash do ID Strava agora é HMAC (importante ao migrar dados)
+| Variável | Valor |
+| --- | --- |
+| `DATABASE_URL` | String do Transaction pooler com o usuário `runclub_api` |
+| `SESSION_SECRET` | `openssl rand -hex 32` |
+| `COACH_EMAIL` | E-mail(s) dos treinadores, separados por vírgula |
+| `COACH_SIGNUP_CODE` | Um código que só o treinador saiba |
+| `EXPO_PUBLIC_API_BASE_URL` | URL da própria API, ex.: `https://run-club-magagna.vercel.app` |
+| `ALLOWED_ORIGINS` | `https://adrian04magagna-byte.github.io` |
+| `APP_RETURN_URLS` | `https://adrian04magagna-byte.github.io/Run-Club-Magagna/oauth/callback,runclubmagagna://oauth/callback` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Ver passo 3 |
+| `STRAVA_*` | Opcional, ver "Strava" |
 
-O identificador pseudonimizado da conta Strava passou de SHA-256 simples para **HMAC-SHA-256** com chave derivada (HKDF, rótulo próprio) de `STRAVA_TOKEN_ENCRYPTION_KEY`. IDs do Strava são números curtos e enumeráveis; o hash simples podia ser revertido por força bruta.
+Teste: `https://<sua-api>/api/health` deve responder `{"ok":true,...}`.
 
-Consequências: vínculos Strava criados **antes** desta versão têm o hash antigo e não serão reconhecidos; os alunos precisam desconectar e conectar de novo (o banco novo começa vazio, então não há impacto). Não migre linhas antigas de `strava_connections` sem pedir a reconexão. A mesma chave `STRAVA_TOKEN_ENCRYPTION_KEY` agora também protege o hash: trocá-la invalida os vínculos.
+### 3. Google (login)
 
-Também corrigido: séries do Strava são reduzidas de forma uniforme a 300 pontos (antes eram cortadas nos primeiros 300) e a cadência de corrida é exibida em passos/min (dobro do valor por perna enviado pelo Strava).
+No Google Cloud Console: **APIs e serviços → Tela de consentimento OAuth** (tipo externo) e depois
+**Credenciais → Criar ID do cliente OAuth → Aplicativo da Web**, com o URI de redirecionamento autorizado:
+
+```
+https://<sua-api>/api/auth/google/callback
+```
+
+Copie o Client ID e o Client Secret para a Vercel. Sem eles, o botão do Google mostra uma mensagem
+explicando que o login com Google ainda não foi configurado; o login com e-mail e senha continua funcionando.
+
+### 4. GitHub Pages (app)
+
+Em **Settings → Secrets and variables → Actions → Variables**, crie `API_BASE_URL` com a URL da API
+na Vercel. O próximo push na `main` publica o app apontando para ela.
+
+## Strava
+
+A integração continua no código (`server/_core/stravaOAuth.ts`). Para ativar, cadastre `STRAVA_CLIENT_ID`,
+`STRAVA_CLIENT_SECRET` e `STRAVA_TOKEN_ENCRYPTION_KEY` (32+ bytes aleatórios) na Vercel e registre o
+domínio da API como *Authorization Callback Domain* no painel do Strava. O callback é `/api/strava/oauth/callback`.
+
+> ⚠️ O `.env` com credenciais Strava reais chegou a ser commitado neste repositório público.
+> Gere um novo Client Secret no painel do Strava e uma nova chave de criptografia antes de usar a integração.
+
+## O que saiu do Manus
+
+Removidos: OAuth/SDK Manus, proxy de storage, LLM, notificações, geração de imagem, transcrição de voz
+e o runtime de iframe (nenhum era usado pelas telas). O esquema de deep link mudou para `runclubmagagna://`
+e o bundle id para `com.magagna.runclub`.

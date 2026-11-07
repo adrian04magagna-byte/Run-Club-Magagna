@@ -33,13 +33,6 @@ export function createTRPCClient() {
             "X-RunClub-Platform": Platform.OS === "web" ? "web" : "native",
           };
         },
-        // Custom fetch to include credentials for cookie-based auth
-        fetch(url, options) {
-          return fetch(url, {
-            ...options,
-            credentials: "include",
-          });
-        },
       }),
     ],
   });

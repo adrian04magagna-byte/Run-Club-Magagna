@@ -1,0 +1,7 @@
+.env
+.local-db
+node_modules
+dist
+.env.local
+.vercel
+.codigo-treinador.txt

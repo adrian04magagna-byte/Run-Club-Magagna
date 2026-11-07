@@ -2,28 +2,34 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { CoachPlans } from "@/components/coach-plans";
+import { EmptyState } from "@/components/dashboard-ui";
 import { C, Pill, PrimaryButton, Row, Screen, SectionTitle } from "@/components/run-ui";
 import { useAuth } from "@/hooks/use-auth";
 import { trpc } from "@/lib/trpc";
 
 export default function PlansScreen() {
+  const { user } = useAuth();
+  if (user?.role === "admin") return <CoachPlans />;
+  return <AthletePlans />;
+}
+
+function AthletePlans() {
   const router = useRouter();
   const { user } = useAuth();
-  const isCoach = user?.role === "admin";
-  const workouts = trpc.club.workouts.useQuery(undefined, { enabled: isCoach });
-  const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: !isCoach });
-  const loading = isCoach ? workouts.isLoading : assignments.isLoading;
+  const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: Boolean(user) });
+  const completedCount = (assignments.data ?? []).filter((assignment) => assignment.status === "completed").length;
   const nextAssignment = assignments.data?.find((assignment) => assignment.status === "assigned");
-  if (loading) return <Screen><View style={styles.empty}><Text style={styles.currentText}>Carregando seu plano…</Text></View></Screen>;
+  if (assignments.isLoading) return <Screen><View style={styles.empty}><Text style={styles.currentText}>Carregando seu plano…</Text></View></Screen>;
 
   return <Screen scroll>
-    <View style={styles.header}><View><Text style={styles.eyebrow}>{isCoach ? "TREINADOR" : "SEU CAMINHO"}</Text><Text style={styles.title}>{isCoach ? "Biblioteca" : "Planos"}</Text></View><View style={styles.compass}><Ionicons name="compass" size={21} color={C.ink} /></View></View>
+    <View style={styles.header}><View><Text style={styles.eyebrow}>SEU CAMINHO</Text><Text style={styles.title}>Planos</Text></View><View style={styles.compass}><Ionicons name="compass" size={21} color={C.ink} /></View></View>
 
-    <View style={styles.currentPlan}><View style={styles.currentTop}><Pill label={isCoach ? "TREINOS CRIADOS" : nextAssignment ? "PRÓXIMO TREINO" : "AGUARDANDO"} tone="lime" /><Text style={styles.week}>{isCoach ? `${workouts.data?.length ?? 0} NA BIBLIOTECA` : nextAssignment?.scheduledDate || "SEU CLUBE"}</Text></View><Text style={styles.currentTitle}>{isCoach ? "Planos feitos por você" : nextAssignment?.title || "Aguardando seu treinador"}</Text><Text style={styles.currentText}>{isCoach ? "Monte uma sessão por etapas e atribua a um aluno aprovado." : nextAssignment?.objective || "Os treinos atribuídos aparecerão aqui, com as etapas e orientações do seu treinador."}</Text><View style={styles.currentStats}><View><Text style={styles.statValue}>{isCoach ? workouts.data?.length ?? 0 : nextAssignment?.steps.length ?? 0}</Text><Text style={styles.statLabel}>{isCoach ? "treinos" : "etapas"}</Text></View><View><Text style={styles.statValue}>{isCoach ? "Alunos" : nextAssignment?.status === "completed" ? "Feito" : nextAssignment ? "Aberto" : "—"}</Text><Text style={styles.statLabel}>{isCoach ? "aprovados" : "estado"}</Text></View><View><Text style={styles.statValue}>{isCoach ? "Clube" : "Agenda"}</Text><Text style={styles.statLabel}>{isCoach ? "atribuições" : "pessoal"}</Text></View></View><PrimaryButton label={isCoach ? "Criar ou atribuir treino" : "Abrir Meu clube"} icon="arrow-forward" onPress={() => router.push("/(tabs)/club")} style={styles.currentButton} /></View>
+    <View style={styles.currentPlan}><View style={styles.currentTop}><Pill label={nextAssignment ? "PRÓXIMO TREINO" : "AGUARDANDO"} tone="lime" /><Text style={styles.week}>{nextAssignment?.scheduledDate || "SEU CLUBE"}</Text></View><Text style={styles.currentTitle}>{nextAssignment?.title || "Aguardando seu treinador"}</Text><Text style={styles.currentText}>{nextAssignment?.objective || "Os treinos atribuídos aparecerão aqui, com as etapas e orientações do seu treinador."}</Text><View style={styles.currentStats}><View><Text style={styles.statValue}>{nextAssignment?.steps.length ?? 0}</Text><Text style={styles.statLabel}>etapas</Text></View><View><Text style={styles.statValue}>{assignments.data?.length ?? 0}</Text><Text style={styles.statLabel}>treinos recebidos</Text></View><View><Text style={styles.statValue}>{completedCount}</Text><Text style={styles.statLabel}>concluídos</Text></View></View><PrimaryButton label="Abrir Meu clube" icon="arrow-forward" onPress={() => router.push("/(tabs)/club")} style={styles.currentButton} /></View>
 
     <View style={styles.gap} />
-    <SectionTitle title={isCoach ? "Treinos criados" : "Treinos atribuídos"} />
-    {isCoach ? workouts.data?.length ? <View style={styles.planList}>{workouts.data.map((workout, index) => <PlanCard key={workout.id} color={index % 2 ? C.sand : C.sky} icon={index % 2 ? "flag" : "walk"} title={workout.title} detail={workout.objective} meta={`${workout.steps.length} etapa(s) · ${workout.level}`} onPress={() => router.push("/(tabs)/club")} />)}</View> : <View style={styles.empty}><Text style={styles.emptyTitle}>Sua biblioteca está vazia</Text><Text style={styles.currentText}>Crie o primeiro treino e envie para um aluno aprovado.</Text></View> : assignments.data?.length ? <View style={styles.planList}>{assignments.data.map((assignment, index) => <PlanCard key={assignment.id} color={index % 2 ? C.sand : C.sky} icon={assignment.status === "completed" ? "flag" : "walk"} title={assignment.title} detail={assignment.objective} meta={`${assignment.scheduledDate} · ${assignment.status === "completed" ? "concluído" : "atribuído"}`} onPress={() => router.push("/(tabs)/club")} />)}</View> : <View style={styles.empty}><Text style={styles.emptyTitle}>Nenhum treino enviado ainda</Text><Text style={styles.currentText}>Quando seu treinador atribuir uma sessão, ela aparecerá aqui.</Text></View>}
+    <SectionTitle title="Treinos atribuídos" />
+    {assignments.data?.length ? <View style={styles.planList}>{assignments.data.map((assignment, index) => <PlanCard key={assignment.id} color={index % 2 ? C.sand : C.sky} icon={assignment.status === "completed" ? "flag" : "walk"} title={assignment.title} detail={assignment.objective} meta={`${assignment.scheduledDate} · ${assignment.status === "completed" ? "concluído" : "atribuído"}`} onPress={() => router.push("/(tabs)/club")} />)}</View> : <EmptyState icon="calendar-outline" title="Nenhum treino enviado ainda" text="Quando seu treinador atribuir uma sessão, ela aparecerá aqui." />}
 
     <View style={styles.gap} />
     <SectionTitle title="O que guia cada plano" />
@@ -40,7 +46,7 @@ const styles = StyleSheet.create({
   eyebrow: { color: C.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.5, marginBottom: 5 },
   title: { color: C.ink, fontSize: 31, fontWeight: "900", letterSpacing: -1.1 },
   compass: { width: 43, height: 43, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: C.lime },
-  currentPlan: { padding: 20, borderRadius: 28, backgroundColor: C.ink },
+  currentPlan: { padding: 20, borderRadius: 28, backgroundColor: C.ink, boxShadow: "0px 16px 36px rgba(11, 23, 32, 0.2)" },
   currentTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   week: { color: "rgba(255,255,255,0.62)", fontSize: 9, fontWeight: "900", letterSpacing: 0.8 },
   currentTitle: { color: C.white, fontSize: 26, lineHeight: 30, fontWeight: "900", letterSpacing: -0.8, marginTop: 22 },
@@ -57,7 +63,7 @@ const styles = StyleSheet.create({
   planTitle: { color: C.ink, fontSize: 16, fontWeight: "900" },
   planDetail: { color: C.inkSoft, fontSize: 12, lineHeight: 17, fontWeight: "600" },
   planMeta: { color: C.ink, fontSize: 10, fontWeight: "900", letterSpacing: 0.25, marginTop: 5 },
-  guideCard: { paddingHorizontal: 16, borderRadius: 22, backgroundColor: C.white, borderWidth: 1, borderColor: C.line },
+  guideCard: { paddingHorizontal: 16, borderRadius: 22, backgroundColor: C.white, boxShadow: "0px 10px 24px rgba(11, 23, 32, 0.08)" },
   empty: { padding: 18, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: C.line, gap: 6 },
   emptyTitle: { color: C.ink, fontSize: 15, fontWeight: "900" },
   pressed: { opacity: 0.75 },

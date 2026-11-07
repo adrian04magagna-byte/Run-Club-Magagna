@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import { STRAVA_REQUIRED_SCOPE } from "../../shared/strava";
-import { athleteProcedure, router } from "../_core/trpc";
+import { deleteStravaHistory, getRunMap, getStravaHistoryStatus, saveStravaHistory, updateCoachShare, updateRunMap } from "../_core/stravaHistory";
+import { memberProcedure, router } from "../_core/trpc";
 import {
   beginStravaAuthorization,
   cancelStravaAuthorization,
@@ -23,13 +24,13 @@ const stateSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const activityIdSchema = z.string().regex(/^\d{1,32}$/);
 
 export const stravaRouter = router({
-  status: athleteProcedure.query(async ({ ctx }) => {
+  status: memberProcedure.query(async ({ ctx }) => {
     disableCaching(ctx.res);
     const status = await getStravaConnectionStatus(ctx.user.id);
     return { ...status, requiredScope: STRAVA_REQUIRED_SCOPE };
   }),
 
-  start: athleteProcedure
+  start: memberProcedure
     .input(z.object({
       platform: z.enum(["web", "native"]),
       returnUri: z.string().min(8).max(2048),
@@ -45,42 +46,78 @@ export const stravaRouter = router({
       );
     }),
 
-  complete: athleteProcedure
+  complete: memberProcedure
     .input(z.object({ code: z.string().trim().min(1).max(512), state: stateSchema }))
     .mutation(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return completeStravaAuthorization(ctx.user.id, input.code, input.state);
     }),
 
-  cancel: athleteProcedure
+  cancel: memberProcedure
     .input(z.object({ state: stateSchema }))
     .mutation(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return cancelStravaAuthorization(ctx.user.id, input.state);
     }),
 
-  activities: athleteProcedure
+  activities: memberProcedure
     .input(z.object({ page: z.number().int().min(1).max(100).default(1) }))
     .query(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return listStravaActivities(ctx.user.id, input.page);
     }),
 
-  activityDetail: athleteProcedure
+  activityDetail: memberProcedure
     .input(z.object({ activityId: activityIdSchema }))
     .query(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return getStravaActivityDetail(ctx.user.id, input.activityId);
     }),
 
-  activityStreams: athleteProcedure
+  activityStreams: memberProcedure
     .input(z.object({ activityId: activityIdSchema }))
     .query(async ({ ctx, input }) => {
       disableCaching(ctx.res);
       return getStravaActivityStreams(ctx.user.id, input.activityId);
     }),
 
-  disconnect: athleteProcedure.mutation(async ({ ctx }) => {
+  historyStatus: memberProcedure.query(async ({ ctx }) => {
+    disableCaching(ctx.res);
+    return getStravaHistoryStatus(ctx.user.id);
+  }),
+
+  saveHistory: memberProcedure
+    .input(z.object({ consentAccepted: z.boolean().default(false) }))
+    .mutation(async ({ ctx, input }) => {
+      disableCaching(ctx.res);
+      return saveStravaHistory(ctx.user.id, input.consentAccepted);
+    }),
+
+  deleteHistory: memberProcedure.mutation(async ({ ctx }) => {
+    disableCaching(ctx.res);
+    return deleteStravaHistory(ctx.user.id);
+  }),
+
+  runMap: memberProcedure.query(async ({ ctx }) => {
+    disableCaching(ctx.res);
+    return getRunMap(ctx.user.id);
+  }),
+
+  updateRunMap: memberProcedure
+    .input(z.object({ consentAccepted: z.boolean().default(false) }))
+    .mutation(async ({ ctx, input }) => {
+      disableCaching(ctx.res);
+      return updateRunMap(ctx.user.id, input.consentAccepted);
+    }),
+
+  updateCoachShare: memberProcedure
+    .input(z.object({ share: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      disableCaching(ctx.res);
+      return updateCoachShare(ctx.user.id, input.share);
+    }),
+
+  disconnect: memberProcedure.mutation(async ({ ctx }) => {
     disableCaching(ctx.res);
     return disconnectStrava(ctx.user.id);
   }),

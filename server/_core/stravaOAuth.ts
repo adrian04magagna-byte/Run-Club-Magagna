@@ -5,11 +5,11 @@ import {
   hkdfSync,
   randomBytes,
 } from "node:crypto";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import type { Express, Request, Response as ExpressResponse } from "express";
 
-import { stravaConnections, stravaOAuthStates } from "../../drizzle/schema";
+import { stravaActivityRecords, stravaConnections, stravaOAuthStates } from "../../drizzle/schema";
 import {
   RUN_CLUB_APP_SCHEME,
   STRAVA_CALLBACK_PATH as STRAVA_CLIENT_CALLBACK_PATH,
@@ -138,7 +138,10 @@ export function validateStravaReturnUri(input: string, platform: OAuthPlatform, 
       throw trpcError("BAD_REQUEST", "Não foi possível validar o retorno seguro do Strava.");
     }
     const secureOrigin = origin.protocol === "https:" || (origin.protocol === "http:" && isLoopback(origin.hostname));
-    if (!secureOrigin || url.origin !== origin.origin || url.pathname !== STRAVA_CLIENT_CALLBACK_PATH) {
+    // The web app may live under one sub-path (GitHub Pages: /<repo>/strava/callback).
+    const callbackPath = url.pathname === STRAVA_CLIENT_CALLBACK_PATH ||
+      new RegExp(`^/[A-Za-z0-9._-]+${STRAVA_CLIENT_CALLBACK_PATH}$`).test(url.pathname);
+    if (!secureOrigin || url.origin !== origin.origin || !callbackPath) {
       throw trpcError("BAD_REQUEST", "Não foi possível validar o retorno seguro do Strava.");
     }
     return url.toString();
@@ -283,8 +286,9 @@ async function consumeOAuthState(userId: number, state: string) {
     throw trpcError("PRECONDITION_FAILED", "A autorização Strava expirou ou não pertence a esta conta. Inicie a conexão novamente.");
   }
   const removed = await db.delete(stravaOAuthStates)
-    .where(and(eq(stravaOAuthStates.stateHash, stateHash), eq(stravaOAuthStates.userId, userId)));
-  if (!removed[0].affectedRows) {
+    .where(and(eq(stravaOAuthStates.stateHash, stateHash), eq(stravaOAuthStates.userId, userId)))
+    .returning({ stateHash: stravaOAuthStates.stateHash });
+  if (!removed.length) {
     throw trpcError("PRECONDITION_FAILED", "Esta autorização Strava já foi utilizada.");
   }
   return record;
@@ -368,11 +372,6 @@ export async function completeStravaAuthorization(userId: number, code: string, 
   const stravaAthleteHash = hashStravaAthleteId(tokenData.athleteId);
 
   await db.transaction(async (tx) => {
-    const linkedAthlete = await tx.select({ userId: stravaConnections.userId })
-      .from(stravaConnections).where(eq(stravaConnections.stravaAthleteHash, stravaAthleteHash)).limit(1);
-    if (linkedAthlete[0] && linkedAthlete[0].userId !== userId) {
-      throw trpcError("CONFLICT", "Esta conta Strava já está vinculada a outro perfil do Run Club.");
-    }
     const existing = await tx.select({ id: stravaConnections.id })
       .from(stravaConnections).where(eq(stravaConnections.userId, userId)).limit(1);
     if (existing.length) {
@@ -386,7 +385,15 @@ export async function completeStravaAuthorization(userId: number, code: string, 
       tokenExpiresAt: tokenData.expiresAt,
       consentedAt: stateRecord.consentedAt,
       consentVersion: stateRecord.consentVersion,
+      // This version of the terms tells the member that coaches see their runs and map.
+      coachShareAt: stateRecord.consentVersion === STRAVA_CONSENT_VERSION ? stateRecord.consentedAt : null,
     });
+    // Coach and student profiles of one person share a Strava login, so a new grant must reach both.
+    await tx.update(stravaConnections).set({
+      encryptedTokenEnvelope,
+      scopes: tokenData.scopes,
+      tokenExpiresAt: tokenData.expiresAt,
+    }).where(eq(stravaConnections.stravaAthleteHash, stravaAthleteHash));
   });
 
   return { connected: true as const };
@@ -460,7 +467,7 @@ async function refreshAccessToken(userId: number): Promise<string> {
     encryptedTokenEnvelope: encryptStravaTokens(nextTokens),
     tokenExpiresAt: new Date(payload.expires_at * 1000),
     ...(typeof payload.scope === "string" ? { scopes: payload.scope } : {}),
-  }).where(eq(stravaConnections.userId, userId));
+  }).where(eq(stravaConnections.stravaAthleteHash, connection.stravaAthleteHash));
   return nextTokens.accessToken;
 }
 
@@ -502,6 +509,7 @@ async function requestStravaApi(userId: number, path: string, query?: URLSearchP
   if (response.status === 401) {
     const db = await requireDb();
     await db.delete(stravaConnections).where(eq(stravaConnections.userId, userId));
+    await db.delete(stravaActivityRecords).where(eq(stravaActivityRecords.userId, userId));
     throw trpcError("PRECONDITION_FAILED", "A autorização Strava foi revogada ou expirou. Conecte novamente para consultar suas atividades.");
   }
   if (response.status === 429) throw trpcError("TOO_MANY_REQUESTS", "O limite de consultas do Strava foi atingido. Aguarde um pouco e tente novamente.");
@@ -575,6 +583,44 @@ export async function listStravaActivities(userId: number, page: number) {
   return payload.map(toSummary).filter((item): item is StravaActivitySummary => item !== null);
 }
 
+const STRAVA_MAX_PAGE_SIZE = 200;
+
+async function listRawActivitiesSince(userId: number, afterEpochSeconds: number, maxPages: number) {
+  const items: unknown[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const query = new URLSearchParams({
+      after: String(Math.max(0, Math.floor(afterEpochSeconds))),
+      page: String(page),
+      per_page: String(STRAVA_MAX_PAGE_SIZE),
+    });
+    const payload = await requestStravaApi(userId, "/athlete/activities", query);
+    if (!Array.isArray(payload)) throw trpcError("SERVICE_UNAVAILABLE", "O Strava retornou uma lista de atividades inválida.");
+    items.push(...payload);
+    if (payload.length < STRAVA_MAX_PAGE_SIZE) return { items, truncated: false };
+  }
+  return { items, truncated: true };
+}
+
+/** Every activity started after `afterEpochSeconds`, newest pages first; stops after `maxPages`. */
+export async function listStravaActivitiesSince(userId: number, afterEpochSeconds: number, maxPages: number) {
+  const { items, truncated } = await listRawActivitiesSince(userId, afterEpochSeconds, maxPages);
+  return { items: items.map(toSummary).filter((item): item is StravaActivitySummary => item !== null), truncated };
+}
+
+/** Same list with each activity's encoded route, which stays on the server. */
+export async function listStravaRoutedActivities(userId: number, afterEpochSeconds: number, maxPages: number) {
+  const { items, truncated } = await listRawActivitiesSince(userId, afterEpochSeconds, maxPages);
+  return {
+    truncated,
+    items: items.flatMap((raw) => {
+      const summary = toSummary(raw);
+      if (!summary) return [];
+      const route = (raw as { map?: { summary_polyline?: unknown } }).map?.summary_polyline;
+      return [{ ...summary, routePolyline: typeof route === "string" && route ? route : null }];
+    }),
+  };
+}
+
 export async function getStravaActivityDetail(userId: number, activityId: string): Promise<StravaActivityDetail> {
   const expectedAthleteHash = await getConnectedAthleteHash(userId);
   const payload = await requestStravaApi(userId, `/activities/${activityId}`);
@@ -619,6 +665,7 @@ export async function getStravaActivityStreams(userId: number, activityId: strin
 
 export async function disconnectStrava(userId: number) {
   const db = await requireDb();
+  await db.delete(stravaActivityRecords).where(eq(stravaActivityRecords.userId, userId));
   const rows = await db.select().from(stravaConnections).where(eq(stravaConnections.userId, userId)).limit(1);
   const connection = rows[0];
   if (!connection) return { disconnected: true as const, remoteRevoked: true };
@@ -627,7 +674,12 @@ export async function disconnectStrava(userId: number) {
   try {
     tokens = decryptStravaTokens(connection.encryptedTokenEnvelope);
   } catch { /* Remove the local connection even if its encrypted tokens are unreadable. */ }
-  await db.delete(stravaConnections).where(eq(stravaConnections.userId, userId));
+  // Revoking the login at Strava ends every profile that shares it, so their copies go too.
+  const profiles = await db.select({ userId: stravaConnections.userId }).from(stravaConnections)
+    .where(eq(stravaConnections.stravaAthleteHash, connection.stravaAthleteHash));
+  const userIds = profiles.map((profile) => profile.userId);
+  await db.delete(stravaActivityRecords).where(inArray(stravaActivityRecords.userId, userIds));
+  await db.delete(stravaConnections).where(inArray(stravaConnections.userId, userIds));
   await db.delete(stravaOAuthStates).where(eq(stravaOAuthStates.userId, userId));
   if (!tokens) return { disconnected: true as const, remoteRevoked: false };
 

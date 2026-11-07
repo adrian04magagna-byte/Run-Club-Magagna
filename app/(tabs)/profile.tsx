@@ -19,10 +19,10 @@ export default function ProfileScreen() {
   const profile = trpc.account.profile.useQuery();
   const saveProfile = trpc.account.saveProfile.useMutation();
   const isCoach = user?.role === "admin";
-  const activities = trpc.club.myActivities.useQuery(undefined, { enabled: !isCoach });
+  const activities = trpc.club.myActivities.useQuery(undefined, { enabled: Boolean(user) && !isCoach });
   const athletes = trpc.club.athletes.useQuery(undefined, { enabled: isCoach });
   const pending = trpc.club.pendingAthletes.useQuery(undefined, { enabled: isCoach });
-  const stravaStatus = trpc.strava.status.useQuery(undefined, { enabled: !isCoach, staleTime: 0 });
+  const stravaStatus = trpc.strava.status.useQuery(undefined, { enabled: Boolean(user), staleTime: 0 });
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [avatarDraftUri, setAvatarDraftUri] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export default function ProfileScreen() {
 
   const weekStart = new Date();
   weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(weekStart.getDate() - 6);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
   const thisWeek = (activities.data ?? []).filter((activity) => new Date(activity.completedAt) >= weekStart);
   const weekKm = thisWeek.reduce((total, activity) => total + activity.distanceMeters, 0) / 1000;
   const displayName = profile.data?.name || user?.name || user?.email || "Sua conta";
@@ -133,7 +133,7 @@ export default function ProfileScreen() {
 
     <View style={styles.profileCard}>
       <ProfileAvatar uri={avatarUrl} name={displayName} size={68} />
-      <View style={styles.profileCopy}><Text style={styles.name}>{displayName}</Text><Text style={styles.profileDetail}>{profile.data?.email || user?.email || "Conta autenticada"}</Text><Pill label={isCoach ? "TREINADOR" : "ALUNA APROVADA"} tone="lime" /></View>
+      <View style={styles.profileCopy}><Text style={styles.name}>{displayName}</Text><Text style={styles.profileDetail}>{profile.data?.email || user?.email || "Conta autenticada"}</Text><Pill label={isCoach ? "TREINADOR" : "ALUNO APROVADO"} tone="lime" /></View>
     </View>
     <Pressable accessibilityRole="button" onPress={beginEdit} style={({ pressed }) => [styles.editLink, pressed && styles.pressed]}>
       <Ionicons name="create-outline" size={18} color={C.ink} />
@@ -165,15 +165,13 @@ export default function ProfileScreen() {
 
     <View style={styles.gap} />
     <SectionTitle title={isCoach ? "Sua turma" : "Seu momento"} />
-    <View style={styles.momentCard}>{isCoach ? <><View style={styles.momentItem}><Ionicons name="people-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{athletes.data?.length ?? 0}</Text><Text style={styles.momentLabel}>alunos aprovados</Text></View></View><View style={styles.momentLine} /><View style={styles.momentItem}><Ionicons name="hourglass-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{pending.data?.length ?? 0}</Text><Text style={styles.momentLabel}>pedidos pendentes</Text></View></View></> : <><View style={styles.momentItem}><Ionicons name="footsteps-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{weekKm.toFixed(1)} km</Text><Text style={styles.momentLabel}>registrados em 7 dias</Text></View></View><View style={styles.momentLine} /><View style={styles.momentItem}><Ionicons name="flame-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{thisWeek.length}</Text><Text style={styles.momentLabel}>atividades registradas</Text></View></View></>}</View>
+    <View style={styles.momentCard}>{isCoach ? <><View style={styles.momentItem}><Ionicons name="people-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{athletes.data?.length ?? 0}</Text><Text style={styles.momentLabel}>alunos aprovados</Text></View></View><View style={styles.momentLine} /><View style={styles.momentItem}><Ionicons name="hourglass-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{pending.data?.length ?? 0}</Text><Text style={styles.momentLabel}>pedidos pendentes</Text></View></View></> : <><View style={styles.momentItem}><Ionicons name="footsteps-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{weekKm.toFixed(1)} km</Text><Text style={styles.momentLabel}>registrados nesta semana</Text></View></View><View style={styles.momentLine} /><View style={styles.momentItem}><Ionicons name="flame-outline" size={21} color={C.ink} /><View><Text style={styles.momentValue}>{thisWeek.length}</Text><Text style={styles.momentLabel}>atividades registradas</Text></View></View></>}</View>
 
     <View style={styles.gap} />
     <SectionTitle title="Seu acompanhamento" />
     <View style={styles.list}>
       <Row icon={isCoach ? "people-outline" : "calendar-outline"} title={isCoach ? "Gestão de alunos e treinos" : "Agenda e avaliações"} detail={isCoach ? "Acesse a aba Alunos para aprovar, atribuir e avaliar." : "Acesse Meu clube para ver treinos enviados e comentários."} />
-      {isCoach
-        ? <Row icon="shield-checkmark-outline" title="Privacidade do Strava" detail="Cada aluno consulta somente a própria conta. Atividades importadas não aparecem para o Treinador." />
-        : <Row icon="pulse-outline" title="Meu histórico Strava" detail={stravaStatus.data?.connected ? "Conta conectada. Consulte suas atividades privadas." : stravaStatus.data?.configured ? "Conecte sua conta para consultar seu histórico pessoal." : "Aguardando configuração do app Strava."} onPress={() => router.push("/strava")} />}
+      <Row icon="pulse-outline" title="Meu histórico Strava" detail={stravaStatus.data?.connected ? "Conta conectada. Consulte suas atividades privadas." : stravaStatus.data?.configured ? "Conecte sua conta para consultar seu histórico pessoal." : "Aguardando configuração do app Strava."} onPress={() => router.push("/strava")} />
     </View>
     <View style={styles.gap} />
     <Pressable onPress={signOut} style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}><Ionicons name="log-out-outline" size={19} color={C.ink} /><Text style={styles.signOutText}>Sair da conta</Text></Pressable>

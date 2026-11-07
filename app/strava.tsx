@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import * as ExpoLinking from "expo-linking";
 import Svg, { Polyline } from "react-native-svg";
-import { Redirect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 
 import { BackButton, C, CoachNote, Pill, PrimaryButton, Screen, SectionTitle } from "@/components/run-ui";
 import { MemberGate } from "@/components/member-gate";
-import { useAuth } from "@/hooks/use-auth";
+import { appWebUrl } from "@/constants/oauth";
 import { trpc } from "@/lib/trpc";
 import {
   RUN_CLUB_APP_SCHEME,
@@ -22,7 +22,7 @@ const PAGE_SIZE = 20;
 
 function getStravaRedirectUri(): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
-    return `${window.location.origin}${STRAVA_CALLBACK_PATH}`;
+    return appWebUrl(STRAVA_CALLBACK_PATH);
   }
   return ExpoLinking.createURL(STRAVA_CALLBACK_PATH, { scheme: RUN_CLUB_APP_SCHEME });
 }
@@ -365,7 +365,7 @@ function StravaHome() {
       </View>
 
       <CoachNote label="PRIVACIDADE" >
-        Este espaço é só seu. O Treinador e os outros alunos não podem ver atividades importadas do Strava. Elas também não entram no histórico avaliável do Clube.
+        Ao conectar, os treinadores veem suas corridas do Strava e seu mapa. Os outros alunos não veem. Você pode tirar essa permissão na aba Mapa quando quiser.
       </CoachNote>
 
       {status.isLoading ? <ActivityIndicator size="large" color={C.ink} style={styles.statusSpinner} /> : null}
@@ -378,10 +378,11 @@ function StravaHome() {
             <Text style={styles.connectedDate}>{status.data.connectedAt ? `Desde ${formatDate(status.data.connectedAt)}` : "Conta vinculada"}</Text>
           </View>
           <Text style={styles.connectionTitle}>Sua conta está conectada</Text>
-          <Text style={styles.connectionCopy}>Cada atualização consulta o Strava ao vivo. O app não grava as atividades nem as métricas no banco do Clube. Para excluir os dados da integração no Run Club, use “Desconectar e revogar acesso”; isso remove tokens, hash, escopos e estados OAuth locais. Para também retirar a autorização na Strava, remova Run Club Magagna em strava.com/settings/apps.</Text>
+          <Text style={styles.connectionCopy}>Cada atualização consulta o Strava ao vivo. Suas corridas só ficam guardadas no banco do Clube se você autorizar abaixo. Para excluir os dados da integração no Run Club, use “Desconectar e revogar acesso”; isso remove tokens, hash, escopos e estados OAuth locais. Para também retirar a autorização na Strava, remova Run Club Magagna em strava.com/settings/apps.</Text>
           <Pressable disabled={disconnect.isPending} onPress={disconnectAccount} style={({ pressed }) => [styles.disconnectButton, disconnect.isPending && styles.disabled, pressed && styles.pressed]}>
             {disconnect.isPending ? <ActivityIndicator color={C.ink} /> : <Text style={styles.disconnectText}>Desconectar e revogar acesso</Text>}
           </Pressable>
+          <StravaHistoryTest />
         </View>
       ) : status.data?.configured ? (
         <View style={styles.connectionCard}>
@@ -390,7 +391,7 @@ function StravaHome() {
           <Text style={styles.connectionCopy}>O app consulta nome e data das corridas, distância, tempos, ritmo, elevação e, quando disponíveis, frequência cardíaca, cadência, potência, temperatura, parciais e séries de sensores. A finalidade é mostrar seu histórico somente a você; activity:read não inclui atividades “Somente você”. Enquanto conectado, guardamos tokens OAuth criptografados, escopos e um hash do identificador Strava para manter o vínculo; o ID legível e as atividades/métricas não são salvos. Ao desconectar, removemos token, hash, escopos e estados OAuth locais; atividades removidas no Strava deixam de aparecer na próxima atualização.</Text>
           <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: consentAccepted }} onPress={() => setConsentAccepted((checked) => !checked)} style={styles.consentRow}>
             <View style={[styles.checkbox, consentAccepted && styles.checkboxChecked]}>{consentAccepted ? <Text style={styles.checkmark}>✓</Text> : null}</View>
-            <Text style={styles.consentText}>Entendi que o Run Club consultará minhas atividades sob demanda, que só eu as verei e que os tokens ficam criptografados no servidor enquanto conectado. Posso desconectar no app e revogar o acesso na Strava a qualquer momento.</Text>
+            <Text style={styles.consentText}>Entendi que o Run Club consultará minhas atividades sob demanda, que os treinadores verão minhas corridas e meu mapa e que os tokens ficam criptografados no servidor enquanto conectado. Posso desconectar no app e revogar o acesso na Strava a qualquer momento.</Text>
           </Pressable>
           <PrimaryButton label={start.isPending ? "Abrindo Strava…" : "Conectar minha conta Strava"} icon="arrow-forward" onPress={() => void connect()} />
           <Text style={styles.scopeNote}>Permissão solicitada: activity:read. O app não pede acesso a atividades privadas nesta etapa.</Text>
@@ -490,12 +491,42 @@ function StravaHome() {
 }
 
 export default function StravaScreen() {
-  const { user } = useAuth();
-  if (user?.role === "admin") return <Redirect href="/(tabs)/profile" />;
   return <MemberGate><StravaHome /></MemberGate>;
 }
 
+/** Test: with the member's own consent, copies their runs to the club database for later calculations. */
+function StravaHistoryTest() {
+  const [accepted, setAccepted] = useState(false);
+  const history = trpc.strava.historyStatus.useQuery();
+  const save = trpc.strava.saveHistory.useMutation({ onSuccess: () => history.refetch() });
+  const remove = trpc.strava.deleteHistory.useMutation({ onSuccess: () => { setAccepted(false); return history.refetch(); } });
+  const consented = history.data?.consented ?? false;
+  const saved = history.data?.saved ?? 0;
+  const busy = save.isPending || remove.isPending;
+  const blocked = busy || (!consented && !accepted);
+  return <View style={styles.historyBox}>
+    <Text style={styles.connectionTitle}>Guardar minhas corridas (teste)</Text>
+    <Text style={styles.connectionCopy}>Com sua autorização, o Run Club guarda data, distância, tempo, ritmo, elevação e, quando houver, frequência cardíaca e cadência das suas corridas, sem o mapa. Esses dados serão usados em testes de análise de treino. Você pode apagar tudo quando quiser.</Text>
+    {consented
+      ? <Text style={styles.connectionCopy}>{saved} corridas salvas, {history.data?.withStreams ?? 0} com métricas detalhadas. Cada envio busca métricas de mais 10 corridas.</Text>
+      : <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted }} onPress={() => setAccepted((checked) => !checked)} style={styles.historyConsent}>
+        <View style={[styles.checkbox, accepted && styles.checkboxChecked]}>{accepted ? <Text style={styles.checkmark}>✓</Text> : null}</View>
+        <Text style={styles.historyConsentText}>Autorizo guardar minhas corridas para esses testes.</Text>
+      </Pressable>}
+    {save.error ? <Text style={styles.errorText}>{save.error.message}</Text> : null}
+    <Pressable disabled={blocked} onPress={() => save.mutate({ consentAccepted: accepted })} style={({ pressed }) => [styles.disconnectButton, blocked && styles.disabled, pressed && styles.pressed]}>
+      {save.isPending ? <ActivityIndicator color={C.ink} /> : <Text style={styles.disconnectText}>{consented ? "Atualizar minhas corridas" : "Guardar minhas corridas"}</Text>}
+    </Pressable>
+    {consented ? <Pressable disabled={busy} onPress={() => remove.mutate()} style={({ pressed }) => [styles.disconnectButton, busy && styles.disabled, pressed && styles.pressed]}>
+      <Text style={styles.disconnectText}>Apagar tudo e retirar autorização</Text>
+    </Pressable> : null}
+  </View>;
+}
+
 const styles = StyleSheet.create({
+  historyConsent: { flexDirection: "row", alignItems: "center", gap: 10 },
+  historyConsentText: { flex: 1, color: C.ink, fontSize: 12, lineHeight: 17, fontWeight: "700" },
+  historyBox: { gap: 10, marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: C.line },
   header: { marginBottom: 20 },
   eyebrow: { color: C.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.55, marginBottom: 6 },
   title: { color: C.ink, fontSize: 32, fontWeight: "900", letterSpacing: -1.1 },

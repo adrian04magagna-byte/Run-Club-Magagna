@@ -1,127 +1,209 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { AppMark, C, CoachNote, IconCircle, Metric, MiniBarChart, Pill, PrimaryButton, RouteSpark, Screen, SectionTitle } from "@/components/run-ui";
+import { formatDay, formatKm, formatPace } from "@/components/dashboard-ui";
+import { C, Pill, PrimaryButton, Screen, SectionTitle } from "@/components/run-ui";
+import { TrainingDashboard } from "@/components/training-dashboard";
 import { useAuth } from "@/hooks/use-auth";
+import { localToday } from "@/hooks/use-insights";
 import { trpc } from "@/lib/trpc";
+import { addDays, startOfWeek } from "@/shared/insights";
+
+function greeting() {
+  const hour = new Date().getHours();
+  return hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+}
+
+/** Date and greeting; the photo and brand live in the dark top bar. */
+function Header() {
+  const { user } = useAuth();
+  const profile = trpc.account.profile.useQuery(undefined, { enabled: Boolean(user) });
+  const name = profile.data?.name || user?.name || "";
+  const firstName = name.split(" ")[0] || "corredor";
+  const rawDate = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  const dateLabel = rawDate.charAt(0).toUpperCase() + rawDate.slice(1);
+  return (
+    <View style={styles.header}>
+      <Text style={styles.headerDate}>{dateLabel}</Text>
+      <Text style={styles.headerHello} numberOfLines={1}>{greeting()}, {firstName}</Text>
+    </View>
+  );
+}
 
 export default function TodayScreen() {
-  const router = useRouter();
   const { user } = useAuth();
-  const isCoach = user?.role === "admin";
-  const assignments = trpc.club.myAssignments.useQuery(undefined, { enabled: !isCoach });
-  const activities = trpc.club.myActivities.useQuery(undefined, { enabled: !isCoach });
-  const pending = trpc.club.pendingAthletes.useQuery(undefined, { enabled: isCoach });
-  const athletes = trpc.club.athletes.useQuery(undefined, { enabled: isCoach });
-  const feed = trpc.club.coachActivityFeed.useQuery(undefined, { enabled: isCoach });
-
-  if (isCoach) {
-    return <Screen scroll>
-      <View style={styles.topbar}><View style={styles.brandRow}><AppMark size={38} /><Text style={styles.brand}>Run Club Magagna</Text></View><IconCircle name="person-outline" onPress={() => router.push("/(tabs)/profile")} /></View>
-      <View style={styles.welcome}><View><Text style={styles.eyebrow}>PAINEL DO TREINADOR</Text><Text style={styles.title}>Bom ter você{ "\n" }por aqui.</Text></View><View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || "R").slice(0, 1).toUpperCase()}</Text></View></View>
-      <View style={styles.coachStats}><View style={styles.coachStat}><Text style={styles.coachStatValue}>{athletes.data?.length ?? 0}</Text><Text style={styles.coachStatLabel}>alunos</Text></View><View style={styles.coachStat}><Text style={styles.coachStatValue}>{pending.data?.length ?? 0}</Text><Text style={styles.coachStatLabel}>pedidos</Text></View><View style={styles.coachStat}><Text style={styles.coachStatValue}>{feed.data?.filter((entry) => !entry.review).length ?? 0}</Text><Text style={styles.coachStatLabel}>para avaliar</Text></View></View>
-      <View style={styles.spacing} />
-      <SectionTitle title="Próxima ação" />
-      <View style={styles.coachActionCard}><View style={styles.goalIcon}><Ionicons name="people" size={21} color={C.ink} /></View><View style={styles.goalCopy}><Text style={styles.goalTitle}>{pending.data?.length ? "Aprovar novos alunos" : "Acompanhar sua turma"}</Text><Text style={styles.goalDetail}>{pending.data?.length ? `${pending.data.length} pedido(s) aguardando sua revisão.` : "Crie e envie o próximo treino pelo Clube."}</Text></View></View>
-      <PrimaryButton label="Abrir gestão da turma" icon="arrow-forward" onPress={() => router.push("/(tabs)/club")} style={styles.openWorkout} />
-      <View style={styles.spacing} />
-      <SectionTitle title="Atividade recente" action="Ver turma" onPress={() => router.push("/(tabs)/club")} />
-      {feed.data?.slice(0, 3).length ? feed.data.slice(0, 3).map(({ activity, athleteName, review }) => <View key={activity.id} style={styles.recentCard}><Pill label={review ? "AVALIADO" : "AGUARDA AVALIAÇÃO"} tone={review ? "lime" : "coral"} /><View style={styles.recentCopy}><Text style={styles.goalTitle}>{athleteName || "Aluno"} · {activity.title}</Text><Text style={styles.goalDetail}>{(activity.distanceMeters / 1000).toFixed(2)} km · {Math.floor(activity.durationSeconds / 60)} min</Text></View></View>) : <CoachNote label="TURMA">Quando seus alunos registrarem uma atividade, ela aparecerá aqui para você avaliar.</CoachNote>}
-    </Screen>;
-  }
-
-  const upcoming = assignments.data?.find((assignment) => assignment.status === "assigned");
-  const weekStart = new Date();
-  weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(weekStart.getDate() - 6);
-  const recentActivities = (activities.data ?? []).filter((activity) => new Date(activity.completedAt) >= weekStart);
-  const weekAssignments = (assignments.data ?? []).filter((assignment) => new Date(`${assignment.scheduledDate}T00:00:00`) >= weekStart);
-  const weekCompleted = weekAssignments.filter((assignment) => assignment.status === "completed").length;
-  const weekDistance = recentActivities.reduce((total, activity) => total + activity.distanceMeters, 0) / 1000;
-  const stepMinutes = (upcoming?.steps ?? []).reduce((total, step) => total + (step.durationSeconds ?? 0), 0) / 60;
-  const stepDistance = (upcoming?.steps ?? []).reduce((total, step) => total + (step.distanceMeters ?? 0), 0) / 1000;
-  const paceSeconds = upcoming?.steps.find((step) => step.targetPaceSecondsPerKm)?.targetPaceSecondsPerKm;
-  const paceLabel = paceSeconds ? `${Math.floor(paceSeconds / 60)}:${String(paceSeconds % 60).padStart(2, "0")}` : "—";
-  const chartValues = Array.from({ length: 7 }, (_, offset) => {
-    const day = new Date();
-    day.setHours(0, 0, 0, 0);
-    day.setDate(day.getDate() - (6 - offset));
-    const km = recentActivities.filter((activity) => new Date(activity.completedAt).toDateString() === day.toDateString()).reduce((total, activity) => total + activity.distanceMeters, 0) / 1000;
-    return Math.round(Math.min(100, km * 18));
-  });
-  const dateLabel = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }).toLocaleUpperCase("pt-BR");
-
   return (
-    <Screen scroll>
-      <View style={styles.topbar}>
-        <View style={styles.brandRow}><AppMark size={38} /><Text style={styles.brand}>Run Club Magagna</Text></View>
-        <IconCircle name="notifications-outline" onPress={() => router.push("/(tabs)/profile")} />
-      </View>
-
-      <View style={styles.welcome}><View><Text style={styles.eyebrow}>{dateLabel}</Text><Text style={styles.title}>Seu ritmo,{"\n"}seu momento.</Text></View><View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || "R").slice(0, 1).toUpperCase()}</Text></View></View>
-
-      <View style={styles.todayCard}>
-        <View style={styles.cardGlow} />
-        <View style={styles.todayHeader}><Pill label={upcoming ? "PRÓXIMO TREINO" : "SUA AGENDA"} tone="lime" icon="flash" /><Text style={styles.level}>{upcoming ? upcoming.scheduledDate : "CLUBE"}</Text></View>
-        <View style={styles.todayCopy}><Text style={styles.todayName}>{upcoming?.title || "Seu plano começa com o treinador"}</Text><Text style={styles.todayDescription}>{upcoming?.objective || "Quando ele atribuir seu primeiro treino, os detalhes vão aparecer aqui."}</Text></View>
-        <RouteSpark light height={74} />
-        <View style={styles.todayFooter}><View style={styles.metrics}><Metric value={stepMinutes ? `${Math.round(stepMinutes)} min` : "—"} label="duração" reverse /><Metric value={stepDistance ? `${stepDistance.toFixed(1)} km` : "—"} label="distância" reverse /><Metric value={paceLabel} label="ritmo alvo" reverse /></View><View style={styles.play}><Ionicons name="play" size={20} color={C.ink} /></View></View>
-        <PrimaryButton label={upcoming ? "Abrir meu treino" : "Abrir meu clube"} icon="arrow-forward" onPress={() => router.push("/(tabs)/club")} style={styles.openWorkout} />
-      </View>
-
-      <View style={styles.spacing} />
-      <SectionTitle title="Sua semana" action="Detalhes" onPress={() => router.push("/(tabs)/progress")} />
-      <View style={styles.weekCard}><View style={styles.weekCopy}><Text style={styles.weekValue}>{weekCompleted}</Text><Text style={styles.weekText}>treinos concluídos · 7 dias</Text><View style={styles.progressTrack}><View style={[styles.progressFill, { width: weekAssignments.length ? `${Math.round((weekCompleted / weekAssignments.length) * 100)}%` : "0%" }]} /></View><Text style={styles.weekCaption}>{weekDistance.toFixed(1)} km registrados nesta semana</Text></View><MiniBarChart values={chartValues} highlightIndex={6} /></View>
-
-      <View style={styles.spacing} />
-      <CoachNote>{upcoming ? "Siga as etapas e instruções que seu treinador preparou. Depois, registre como foi para receber um retorno." : "Seu treinador ainda não atribuiu um treino. Abra Meu clube para acompanhar sua agenda e histórico."}</CoachNote>
-
-      <View style={styles.spacing} />
-      <SectionTitle title="Próxima conquista" />
-      <View style={styles.goalCard}><View style={styles.goalIcon}><Ionicons name="flag" size={21} color={C.ink} /></View><View style={styles.goalCopy}><Text style={styles.goalTitle}>{upcoming ? "Seu próximo passo" : "Um plano feito para você"}</Text><Text style={styles.goalDetail}>{upcoming ? upcoming.objective : "O treinador vai definir a próxima etapa do seu percurso."}</Text></View><Ionicons name="chevron-forward" size={19} color={C.muted} /></View>
+    <Screen scroll wide>
+      <Header />
+      {user?.role === "admin" ? <CoachToday /> : <AthleteToday />}
     </Screen>
   );
 }
 
+function AthleteToday() {
+  const router = useRouter();
+  const assignments = trpc.club.myAssignments.useQuery();
+  const upcoming = assignments.data?.find((assignment) => assignment.status === "assigned");
+  // The plan of this calendar week, Monday to Sunday.
+  const weekFrom = startOfWeek(localToday());
+  const weekTo = addDays(weekFrom, 6);
+  const weekAssignments = (assignments.data ?? []).filter((assignment) => assignment.scheduledDate >= weekFrom && assignment.scheduledDate <= weekTo);
+  const weekCompleted = weekAssignments.filter((assignment) => assignment.status === "completed").length;
+  const stepMinutes = (upcoming?.steps ?? []).reduce((total, step) => total + (step.durationSeconds ?? 0), 0) / 60;
+  const stepDistance = (upcoming?.steps ?? []).reduce((total, step) => total + (step.distanceMeters ?? 0), 0);
+  const pace = upcoming?.steps.find((step) => step.targetPaceSecondsPerKm)?.targetPaceSecondsPerKm ?? null;
+
+  const nextCard = (
+    <>
+      <View style={styles.nextCard}>
+        <View style={styles.nextTop}>
+          <Pill label={upcoming ? "PRÓXIMO TREINO" : "SUA AGENDA"} tone="lime" icon="flash" />
+          {upcoming ? <Text style={styles.nextDate}>{formatDay(upcoming.scheduledDate)}</Text> : null}
+        </View>
+        <Text style={styles.nextTitle}>{upcoming?.title || "Aguardando o próximo treino"}</Text>
+        <Text style={styles.nextText}>{upcoming?.objective || "Quando o treinador enviar um treino, os detalhes aparecem aqui."}</Text>
+        {upcoming ? (
+          <View style={styles.nextMetrics}>
+            <NextMetric icon="time-outline" value={stepMinutes ? `${Math.round(stepMinutes)} min` : "—"} />
+            <NextMetric icon="map-outline" value={stepDistance ? `${formatKm(stepDistance)} km` : "—"} />
+            <NextMetric icon="speedometer-outline" value={pace ? `${formatPace(pace)} /km` : "livre"} />
+            <NextMetric icon="list-outline" value={`${upcoming.steps.length} etapas`} />
+          </View>
+        ) : null}
+        {weekAssignments.length ? (
+          <View style={styles.planProgress}>
+            <View style={styles.planProgressTop}>
+              <Text style={styles.planProgressLabel}>Plano da semana</Text>
+              <Text style={styles.planProgressValue}>{weekCompleted}/{weekAssignments.length} feitos</Text>
+            </View>
+            <View style={styles.track}><View style={[styles.trackFill, { width: `${Math.round((weekCompleted / weekAssignments.length) * 100)}%` }]} /></View>
+          </View>
+        ) : null}
+        <PrimaryButton label={upcoming ? "Abrir meu treino" : "Ver meu clube"} icon="arrow-forward" onPress={() => router.push("/(tabs)/club")} style={styles.nextButton} />
+      </View>
+    </>
+  );
+
+  return <TrainingDashboard title="Seu painel" aside={nextCard} />;
+}
+
+function NextMetric({ icon, value }: { icon: "time-outline" | "map-outline" | "speedometer-outline" | "list-outline"; value: string }) {
+  return (
+    <View style={styles.nextMetric}>
+      <Ionicons name={icon} size={14} color={C.lime} />
+      <Text style={styles.nextMetricText}>{value}</Text>
+    </View>
+  );
+}
+
+function CoachToday() {
+  const router = useRouter();
+  const pending = trpc.club.pendingAthletes.useQuery();
+  const athletes = trpc.club.athletes.useQuery();
+  const feed = trpc.club.coachActivityFeed.useQuery();
+  const workouts = trpc.club.workouts.useQuery();
+  const toReview = (feed.data ?? []).filter((entry) => !entry.review);
+  const nextAction = pending.data?.length
+    ? { icon: "person-add" as const, title: "Aprovar novos alunos", text: `${pending.data.length} ${pending.data.length === 1 ? "pedido aguarda" : "pedidos aguardam"} sua revisão.` }
+    : toReview.length
+      ? { icon: "chatbubble-ellipses" as const, title: "Dar retorno aos alunos", text: `${toReview.length} ${toReview.length === 1 ? "treino aguarda" : "treinos aguardam"} sua avaliação.` }
+      : { icon: "add-circle" as const, title: "Enviar o próximo treino", text: "Monte uma sessão por etapas e atribua a um aluno." };
+
+  const classBlock = (
+    <>
+      <View style={styles.coachGrid}>
+        <CoachTile icon="people" value={athletes.data?.length ?? 0} label="alunos" onPress={() => router.push("/(tabs)/club")} />
+        <CoachTile icon="hourglass" value={pending.data?.length ?? 0} label="pedidos" hot={Boolean(pending.data?.length)} onPress={() => router.push("/(tabs)/club")} />
+        <CoachTile icon="star" value={toReview.length} label="para avaliar" hot={toReview.length > 0} onPress={() => router.push("/(tabs)/club")} />
+        <CoachTile icon="library" value={workouts.data?.length ?? 0} label="treinos" onPress={() => router.push("/(tabs)/plans")} />
+      </View>
+
+      <Pressable onPress={() => router.push("/(tabs)/club")} style={({ pressed }) => [styles.actionCard, pressed && styles.pressed]}>
+        <View style={styles.actionIcon}><Ionicons name={nextAction.icon} size={20} color={C.ink} /></View>
+        <View style={styles.actionCopy}>
+          <Text style={styles.actionEyebrow}>PRÓXIMA AÇÃO</Text>
+          <Text style={styles.actionTitle}>{nextAction.title}</Text>
+          <Text style={styles.actionText}>{nextAction.text}</Text>
+        </View>
+        <Ionicons name="arrow-forward" size={20} color={C.ink} />
+      </Pressable>
+
+      {feed.data?.length ? (
+        <>
+          <View style={styles.gap} />
+          <SectionTitle title="Atividade da turma" action="Ver turma" onPress={() => router.push("/(tabs)/club")} />
+          <View style={styles.feed}>
+            {feed.data.slice(0, 3).map(({ activity, athleteName, review }) => (
+              <View key={activity.id} style={styles.feedRow}>
+                <View style={[styles.feedDot, review ? styles.feedDotDone : styles.feedDotOpen]} />
+                <View style={styles.actionCopy}>
+                  <Text style={styles.feedTitle} numberOfLines={1}>{athleteName || "Aluno"} · {activity.title}</Text>
+                  <Text style={styles.feedText}>{formatKm(activity.distanceMeters, 2)} km · {formatPace(activity.averagePaceSecondsPerKm)} /km · {review ? "avaliado" : "aguarda avaliação"}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </>
+      ) : null}
+    </>
+  );
+
+  return <TrainingDashboard title="Seu treino" aside={classBlock} />;
+}
+
+function CoachTile({ icon, value, label, hot = false, onPress }: { icon: "people" | "hourglass" | "star" | "library"; value: number; label: string; hot?: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.coachTile, hot && styles.coachTileHot, pressed && styles.pressed]}>
+      <Ionicons name={icon} size={16} color={C.ink} />
+      <Text style={styles.coachValue}>{value}</Text>
+      <Text style={styles.coachLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 4, marginBottom: 27 },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  brand: { color: C.ink, fontSize: 20, fontWeight: "900", letterSpacing: -0.9 },
-  welcome: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 23 },
-  eyebrow: { color: C.muted, fontSize: 10, fontWeight: "900", letterSpacing: 1.45, marginBottom: 7 },
-  title: { color: C.ink, fontSize: 31, lineHeight: 35, fontWeight: "900", letterSpacing: -1.1 },
-  avatar: { width: 42, height: 42, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: C.coral, marginTop: 4 },
-  avatarText: { color: C.white, fontSize: 16, fontWeight: "900" },
-  todayCard: { minHeight: 375, overflow: "hidden", borderRadius: 29, padding: 20, backgroundColor: C.ink },
-  cardGlow: { position: "absolute", width: 260, height: 260, borderRadius: 150, right: -92, top: 65, backgroundColor: "#1A3946" },
-  todayHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  level: { color: "rgba(255,255,255,0.6)", fontSize: 9, fontWeight: "900", letterSpacing: 0.85 },
-  todayCopy: { marginTop: 23, gap: 7 },
-  todayName: { color: C.white, fontSize: 30, lineHeight: 32, fontWeight: "900", letterSpacing: -1 },
-  todayDescription: { color: "rgba(255,255,255,0.69)", maxWidth: 245, fontSize: 13, lineHeight: 18, fontWeight: "600" },
-  todayFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
-  metrics: { flex: 1, flexDirection: "row", justifyContent: "space-between", paddingRight: 16 },
-  play: { width: 48, height: 48, borderRadius: 18, backgroundColor: C.lime, alignItems: "center", justifyContent: "center", paddingLeft: 2 },
-  openWorkout: { marginTop: 18 },
-  spacing: { height: 29 },
-  weekCard: { minHeight: 147, flexDirection: "row", alignItems: "flex-end", gap: 14, padding: 18, borderRadius: 23, backgroundColor: C.white, borderWidth: 1, borderColor: C.line },
-  weekCopy: { width: "58%", gap: 3 },
-  weekValue: { color: C.ink, fontSize: 27, fontWeight: "900", letterSpacing: -0.9 },
-  weekText: { color: C.muted, fontSize: 12, fontWeight: "700" },
-  progressTrack: { height: 7, borderRadius: 9, overflow: "hidden", backgroundColor: C.stone, marginTop: 12, marginBottom: 3 },
-  progressFill: { width: "67%", height: "100%", borderRadius: 9, backgroundColor: C.limeDeep },
-  weekCaption: { color: C.inkSoft, fontSize: 11, lineHeight: 15, fontWeight: "700" },
-  goalCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: 20, backgroundColor: C.sand },
-  goalIcon: { width: 38, height: 38, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: C.lime },
-  goalCopy: { flex: 1, gap: 3 },
-  goalTitle: { color: C.ink, fontSize: 14, fontWeight: "900" },
-  goalDetail: { color: C.muted, fontSize: 12, fontWeight: "600" },
-  coachStats: { flexDirection: "row", gap: 9 },
-  coachStat: { flex: 1, minHeight: 92, justifyContent: "center", paddingHorizontal: 14, borderRadius: 19, backgroundColor: C.white, borderWidth: 1, borderColor: C.line },
-  coachStatValue: { color: C.ink, fontSize: 25, fontWeight: "900" },
-  coachStatLabel: { color: C.muted, fontSize: 11, fontWeight: "700", marginTop: 3 },
-  coachActionCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: 20, backgroundColor: C.sand },
-  recentCard: { minHeight: 66, flexDirection: "row", alignItems: "center", gap: 10, padding: 13, marginBottom: 8, borderRadius: 17, backgroundColor: C.white, borderWidth: 1, borderColor: C.line },
-  recentCopy: { flex: 1, gap: 4 },
+  pressed: { opacity: 0.78, transform: [{ scale: 0.99 }] },
+  gap: { height: 28 },
+
+  header: { paddingTop: 4, marginBottom: 18 },
+  headerDate: { color: C.muted, fontSize: 12, fontWeight: "700" },
+  headerHello: { color: C.ink, fontSize: 22, lineHeight: 27, fontWeight: "900", letterSpacing: -0.6 },
+
+  nextCard: { padding: 18, borderRadius: 24, backgroundColor: C.navy, boxShadow: "0px 16px 36px rgba(11, 23, 32, 0.2)" },
+  nextTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  nextDate: { color: "rgba(255,255,255,0.65)", fontSize: 11, fontWeight: "800" },
+  nextTitle: { color: C.white, fontSize: 22, lineHeight: 27, fontWeight: "900", letterSpacing: -0.6, marginTop: 14 },
+  nextText: { color: "rgba(255,255,255,0.7)", fontSize: 13, lineHeight: 19, fontWeight: "600", marginTop: 6 },
+  nextMetrics: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 16 },
+  nextMetric: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.08)" },
+  nextMetricText: { color: C.white, fontSize: 12, fontWeight: "800" },
+  planProgress: { marginTop: 18, gap: 8 },
+  planProgressTop: { flexDirection: "row", justifyContent: "space-between" },
+  planProgressLabel: { color: "rgba(255,255,255,0.65)", fontSize: 12, fontWeight: "700" },
+  planProgressValue: { color: C.white, fontSize: 12, fontWeight: "900" },
+  track: { height: 8, borderRadius: 8, overflow: "hidden", backgroundColor: "rgba(255,255,255,0.1)" },
+  trackFill: { height: "100%", borderRadius: 8, backgroundColor: C.lime },
+  nextButton: { marginTop: 16, minHeight: 48 },
+
+  coachGrid: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  coachTile: { flex: 1, gap: 4, padding: 12, borderRadius: 18, backgroundColor: C.white, boxShadow: "0px 8px 20px rgba(11, 23, 32, 0.07)" },
+  coachTileHot: { backgroundColor: C.lime },
+  coachValue: { color: C.ink, fontSize: 24, lineHeight: 28, fontWeight: "900", letterSpacing: -0.6, marginTop: 4 },
+  coachLabel: { color: C.inkSoft, fontSize: 10, fontWeight: "800" },
+
+  actionCard: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 22, backgroundColor: C.sand },
+  actionIcon: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: C.lime },
+  actionCopy: { flex: 1, gap: 2 },
+  actionEyebrow: { color: C.inkSoft, fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
+  actionTitle: { color: C.ink, fontSize: 16, fontWeight: "900" },
+  actionText: { color: C.inkSoft, fontSize: 12, fontWeight: "600" },
+
+  feed: { gap: 8 },
+  feedRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 18, backgroundColor: C.white, borderWidth: 1, borderColor: "#ECEDE6" },
+  feedDot: { width: 10, height: 10, borderRadius: 5 },
+  feedDotDone: { backgroundColor: C.limeDeep },
+  feedDotOpen: { backgroundColor: C.coral },
+  feedTitle: { color: C.ink, fontSize: 14, fontWeight: "800" },
+  feedText: { color: C.muted, fontSize: 12, fontWeight: "600" },
 });

@@ -12,7 +12,9 @@ export function MemberGate({ children }: { children: ReactNode }) {
     enabled: Boolean(user) && user?.role !== "admin",
   });
 
-  if (loading || (user && user.role !== "admin" && (athleteStatus.isLoading || athleteStatus.isFetching))) {
+  // A refetch must not unmount the screen of an approved athlete.
+  const checkingStatus = athleteStatus.isFetching && athleteStatus.data?.status !== "approved";
+  if (loading || (user && user.role !== "admin" && checkingStatus)) {
     return <View style={styles.loading}><ActivityIndicator size="large" color={C.ink} /></View>;
   }
   if (!user) return <Redirect href="/login" />;

@@ -14,7 +14,7 @@ export default function PendingScreen() {
         <Text style={styles.title}>Sua vaga está{ "\n" }em análise.</Text>
         <Text style={styles.copy}>O treinador vai revisar seu cadastro antes de liberar o acesso aos treinos.</Text>
         {email ? <Text style={styles.email}>{email}</Text> : null}
-        <View style={styles.card}><Text style={styles.cardTitle}>O que acontece agora?</Text><Text style={styles.cardCopy}>Assim que sua conta for aprovada, entre com o mesmo e-mail e senha para ver seu plano, registrar atividades e receber avaliações.</Text></View>
+        <View style={styles.card}><Text style={styles.cardTitle}>O que acontece agora?</Text><Text style={styles.cardCopy}>Assim que sua conta for aprovada, entre com o mesmo e-mail e senha (ou com o Google) para ver seu plano, registrar atividades e receber avaliações.</Text></View>
         <Pressable onPress={() => router.replace("/login")} style={({ pressed }) => [styles.button, pressed && styles.pressed]}><Text style={styles.buttonText}>Voltar para entrar</Text></Pressable>
       </View>
     </Screen>

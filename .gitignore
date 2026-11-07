@@ -65,3 +65,12 @@ Thumbs.db
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
+
+# local
+.env
+.local-db/
+.vercel
+.env*
+.codigo-treinador.txt
+.aluno-teste.txt
+dist-server/
