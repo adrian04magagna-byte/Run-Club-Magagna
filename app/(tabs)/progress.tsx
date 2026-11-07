@@ -2,14 +2,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 
-import { BarChart, DeltaChip, EmptyState, PeriodSelector, Skeleton, delta, formatDay, formatDuration, formatKm, formatPace } from "@/components/dashboard-ui";
+import { BarChart, DeltaChip, EmptyState, Explain, PeriodSelector, Skeleton, delta, formatDay, formatDuration, formatKm, formatPace } from "@/components/dashboard-ui";
 import { RunAnalysisSection } from "@/components/run-analysis";
 import { C, PrimaryButton, ProgressRing, Screen, SectionTitle } from "@/components/run-ui";
 import { useAuth } from "@/hooks/use-auth";
 import { useInsights } from "@/hooks/use-insights";
 import { useIsDesktop } from "@/hooks/use-layout";
 import { trpc } from "@/lib/trpc";
-import { PERIOD_DAYS } from "@/shared/insights";
+import { calendarWeeks, daysInRange } from "@/shared/insights";
 
 type RecordIcon = "trophy-outline" | "flash-outline" | "trending-up-outline" | "time-outline";
 
@@ -35,13 +35,13 @@ export default function ProgressScreen() {
   }
 
   const { period } = data;
-  const periodDays = insights.period === "all"
-    ? period.from ? Math.max(1, Math.round((Date.parse(period.to) - Date.parse(period.from)) / 86_400_000) + 1) : 1
-    : PERIOD_DAYS[insights.period];
-  const consistency = Math.min(1, period.activeDays / periodDays);
-  const runsPerWeek = period.runs / Math.max(1, periodDays / 7);
-
   const periodFrom = period.from ?? period.to;
+  const periodDays = daysInRange(periodFrom, period.to);
+  const periodWeeks = calendarWeeks(periodFrom, period.to);
+  const consistency = Math.min(1, period.activeDays / periodDays);
+  const runsPerWeek = period.runs / periodWeeks;
+  const currentWeek = insights.period === "week";
+  const compared = delta(period.distanceMeters, period.previousDistanceMeters);
   const inPeriod = (date: string) => date >= periodFrom && date <= period.to;
   const planned = (assignments.data ?? []).filter((assignment) => inPeriod(assignment.scheduledDate));
   const plannedDone = planned.filter((assignment) => assignment.status === "completed").length;
@@ -52,6 +52,7 @@ export default function ProgressScreen() {
     <Screen scroll wide>
       {header}
       <View style={desktop && styles.selectorDesktop}><PeriodSelector value={insights.period} onChange={insights.setPeriod} /></View>
+      <Text style={styles.weekNote}>As semanas vão de segunda a domingo. A semana atual entra até hoje.</Text>
 
       <View style={desktop && styles.split}>
       <View style={[styles.hero, desktop && styles.heroDesktop]}>
@@ -61,19 +62,20 @@ export default function ProgressScreen() {
             <View style={styles.heroValueRow}>
               <Text style={styles.heroValue}>{formatKm(period.distanceMeters)}</Text>
               <Text style={styles.heroUnit}>km</Text>
-              <DeltaChip value={delta(period.distanceMeters, period.previousDistanceMeters)} inverse />
+              <DeltaChip value={compared} inverse />
             </View>
             <Text style={styles.heroRange}>
-              {period.from ? `${formatDay(period.from)} – ${formatDay(period.to)}` : "Sem corridas registradas ainda"}
+              {period.from ? `${formatDay(period.from)} – ${formatDay(currentWeek ? data.week.to : period.to)}` : "Sem corridas registradas ainda"}
               {insights.isFetching ? " · atualizando…" : ""}
             </Text>
+            {compared !== null ? <Text style={styles.heroRange}>A porcentagem compara com {currentWeek ? "a semana passada" : "o período anterior"} até o mesmo dia.</Text> : null}
           </View>
         </View>
-        <BarChart buckets={data.series} dark height={desktop ? 150 : 130} />
+        <BarChart buckets={data.series} dark height={desktop ? 150 : 130} highlight={data.series.findIndex((bucket) => bucket.from <= period.to && period.to <= bucket.to)} />
         <View style={styles.heroMetrics}>
           <HeroMetric value={String(period.runs)} label="corridas" />
           <HeroMetric value={formatDuration(period.movingSeconds)} label="em movimento" />
-          <HeroMetric value={formatPace(period.averagePaceSecondsPerKm)} label="ritmo /km" />
+          <HeroMetric value={formatPace(period.averagePaceSecondsPerKm)} label="ritmo médio por km" />
         </View>
       </View>
 
@@ -81,12 +83,12 @@ export default function ProgressScreen() {
       {period.runs ? (
         <>
           <View style={desktop ? styles.gapNone : styles.gap} />
-          <SectionTitle title="Recordes do período" />
+          <SectionTitle title="Destaques do período" />
           <View style={styles.records}>
-            <RecordCard icon="trophy-outline" label="Maior corrida" value={`${formatKm(period.longestMeters, 2)} km`} tone={C.sand} />
-            <RecordCard icon="flash-outline" label="Melhor ritmo (1 km+)" value={`${formatPace(period.bestPaceSecondsPerKm)} /km`} tone={C.sky} />
-            <RecordCard icon="trending-up-outline" label="Elevação acumulada" value={`${period.elevationMeters} m`} tone={C.sky} />
-            <RecordCard icon="time-outline" label="Média por corrida" value={`${formatKm(period.distanceMeters / Math.max(1, period.runs), 1)} km`} tone={C.sand} />
+            <RecordCard icon="trophy-outline" label="Maior corrida" hint="A corrida mais longa." value={`${formatKm(period.longestMeters, 2)} km`} tone={C.sand} />
+            <RecordCard icon="flash-outline" label="Melhor ritmo" hint="Menor tempo por km em uma corrida de 1 km ou mais." value={`${formatPace(period.bestPaceSecondsPerKm)} /km`} tone={C.sky} />
+            <RecordCard icon="trending-up-outline" label="Subida acumulada" hint="Soma de todas as subidas das corridas." value={`${period.elevationMeters} m`} tone={C.sky} />
+            <RecordCard icon="time-outline" label="Média por corrida" hint="Distância típica de cada saída." value={`${formatKm(period.distanceMeters / Math.max(1, period.runs), 1)} km`} tone={C.sand} />
           </View>
 
           <View style={styles.gap} />
@@ -100,9 +102,12 @@ export default function ProgressScreen() {
                   : `${period.activeDays} de ${periodDays} dias com corrida`}
               </Text>
               <Text style={styles.consistencyText}>
-                Média de {runsPerWeek.toFixed(1).replace(".", ",")} {runsPerWeek >= 1.95 || runsPerWeek < 1 ? "corridas" : "corrida"} por semana.
+                {currentWeek
+                  ? `${period.runs} ${period.runs === 1 ? "corrida" : "corridas"} nesta semana.`
+                  : `Média de ${runsPerWeek.toFixed(1).replace(".", ",")} ${runsPerWeek >= 1.95 || runsPerWeek < 1 ? "corridas" : "corrida"} por semana.`}
                 {data.week.streakDays > 1 ? ` Você está numa sequência de ${data.week.streakDays} dias.` : ""}
               </Text>
+              <Explain more="Mostra em quantos dias do período você correu. Correr com regularidade, mesmo pouco, costuma render mais do que uma corrida grande de vez em quando." />
             </View>
           </View>
         </>
@@ -137,7 +142,7 @@ export default function ProgressScreen() {
         </>
       ) : (
         <>
-          <SectionTitle title="Plano do treinador" action="Meu clube" onPress={() => router.push("/(tabs)/club")} />
+          <SectionTitle title="Plano do treinador" action="Clube" onPress={() => router.push("/(tabs)/club")} />
           <View style={styles.planCard}>
             <View style={styles.planTop}>
               <Text style={styles.planValue}>{plannedDone}/{planned.length}</Text>
@@ -161,12 +166,13 @@ function HeroMetric({ value, label }: { value: string; label: string }) {
   );
 }
 
-function RecordCard({ icon, label, value, tone }: { icon: RecordIcon; label: string; value: string; tone: string }) {
+function RecordCard({ icon, label, hint, value, tone }: { icon: RecordIcon; label: string; hint: string; value: string; tone: string }) {
   return (
     <View style={[styles.record, { backgroundColor: tone }]}>
       <View style={styles.recordIcon}><Ionicons name={icon} size={17} color={C.ink} /></View>
       <Text style={styles.recordValue}>{value}</Text>
       <Text style={styles.recordLabel}>{label}</Text>
+      <Text style={styles.recordHint}>{hint}</Text>
     </View>
   );
 }
@@ -176,6 +182,7 @@ const styles = StyleSheet.create({
   gap: { height: 28 },
   gapNone: { height: 0 },
   selectorDesktop: { maxWidth: 440 },
+  weekNote: { color: C.muted, fontSize: 11, fontWeight: "700", marginTop: 8 },
   split: { flexDirection: "row", alignItems: "flex-start", gap: 20 },
   side: { flex: 1, minWidth: 0, marginTop: 16 },
   heroDesktop: { flex: 1.35, minWidth: 0 },
@@ -199,7 +206,8 @@ const styles = StyleSheet.create({
   record: { flexBasis: "47%", flexGrow: 1, padding: 16, borderRadius: 22, gap: 4 },
   recordIcon: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.7)", marginBottom: 10 },
   recordValue: { color: C.ink, fontSize: 20, fontWeight: "900", letterSpacing: -0.5 },
-  recordLabel: { color: C.inkSoft, fontSize: 11, fontWeight: "700" },
+  recordLabel: { color: C.ink, fontSize: 12, fontWeight: "800" },
+  recordHint: { color: C.inkSoft, fontSize: 11, lineHeight: 15, fontWeight: "600" },
 
   consistency: { flexDirection: "row", alignItems: "center", gap: 18, padding: 18, borderRadius: 24, backgroundColor: C.white, boxShadow: "0px 10px 24px rgba(11, 23, 32, 0.08)" },
   consistencyCopy: { flex: 1, gap: 6 },

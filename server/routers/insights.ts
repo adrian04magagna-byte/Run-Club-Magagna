@@ -5,7 +5,7 @@ import { z } from "zod";
 import { activities } from "../../drizzle/schema";
 import {
   INSIGHT_PERIODS,
-  PERIOD_DAYS,
+  PERIOD_WEEKS,
   addDays,
   currentStreak,
   inRange,
@@ -84,7 +84,9 @@ function spendDiagnostic(userId: number) {
 const DIAGNOSTIC_SYSTEM = [
   "Você é um analista de corrida de rua do Run Club Magagna e escreve o diagnóstico Run Base to Data.",
   "A ideia: construir uma base aeróbica sólida, com volume consistente e a maior parte do tempo em intensidade leve, e ajustar o treino pelos dados.",
-  "Escreva em português do Brasil, em frases curtas, falando diretamente com o corredor.",
+  "Escreva em português do Brasil, em frases curtas, falando diretamente com o corredor, para uma pessoa leiga: explique termos técnicos com palavras simples e evite siglas.",
+  "As semanas vão de segunda a domingo. Ritmo é o tempo para correr 1 km: quanto menor, mais rápido.",
+  "Tempos de provas muito mais longas que os treinos recentes são apenas referência.",
   "Use apenas os números recebidos e não invente dados. Correlação não prova causa: diga 'tende a', nunca 'causa'.",
   "Com poucas corridas em uma correlação, trate o resultado como indício.",
   "Não cite atletas, treinadores, livros ou métodos de terceiros. Não faça diagnóstico médico; se a carga subiu rápido, sugira cautela e procurar o treinador.",
@@ -146,12 +148,12 @@ export const insightsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Banco de dados indisponível." });
       const { period, today, tzOffsetMinutes } = input;
-      const days = period === "all" ? null : PERIOD_DAYS[period];
-      const periodFrom = days ? addDays(today, -(days - 1)) : "0000-01-01";
-      // Pull twice the window so the previous period can be compared; this week and last week are always needed.
+      const days = period === "all" ? null : PERIOD_WEEKS[period] * 7;
       const weekFrom = startOfWeek(today);
       const lastWeekFrom = addDays(weekFrom, -7);
-      const twoPeriodsFrom = days ? addDays(today, -(2 * days - 1) - 1) : null;
+      const periodFrom = days ? addDays(weekFrom, 7 - days) : "0000-01-01";
+      // Pull twice the window so the previous period can be compared; this week and last week are always needed.
+      const twoPeriodsFrom = days ? addDays(periodFrom, -days) : null;
       const fetchFrom = twoPeriodsFrom && twoPeriodsFrom > lastWeekFrom ? lastWeekFrom : twoPeriodsFrom;
 
       const clubRows = await db.select().from(activities).where(eq(activities.athleteId, ctx.user.id)).orderBy(desc(activities.completedAt));
@@ -187,7 +189,8 @@ export const insightsRouter = router({
       const thisWeek = inRange(entries, weekFrom, today);
       const lastWeekSoFar = inRange(entries, lastWeekFrom, addDays(today, -7));
       const periodEntries = inRange(entries, periodFrom, today);
-      const previousPeriod = days ? inRange(entries, addDays(periodFrom, -days), addDays(periodFrom, -1)) : null;
+      // The running week is unfinished, so the previous period stops at the same weekday.
+      const previousPeriod = days ? inRange(entries, addDays(periodFrom, -days), addDays(today, -days)) : null;
 
       return {
         stravaConnected: strava.connected,

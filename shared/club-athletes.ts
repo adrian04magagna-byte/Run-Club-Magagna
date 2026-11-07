@@ -3,14 +3,14 @@ import { addDays, startOfWeek } from "./insights";
 export type SummaryAssignment = { scheduledDate: string; status: string };
 export type SummaryActivity = { date: string; distanceMeters: number; reviewed: boolean };
 
-const ADHERENCE_DAYS = 56;
+const ADHERENCE_WEEKS = 8;
 
 /** What a coach needs at a glance about an athlete, from club sends and club-shared runs only. */
 export function athleteSummary(assignments: SummaryAssignment[], activities: SummaryActivity[], today: string) {
   const monday = startOfWeek(today);
   const sunday = addDays(monday, 6);
-  const fourWeeksAgo = addDays(today, -27);
-  const adherenceFrom = addDays(today, -ADHERENCE_DAYS);
+  const fourWeeksAgo = addDays(monday, -21);
+  const adherenceFrom = addDays(monday, -7 * (ADHERENCE_WEEKS - 1));
 
   const week = assignments.filter((item) => item.scheduledDate >= monday && item.scheduledDate <= sunday && item.status !== "skipped");
   const overdue = assignments.filter((item) => item.status === "assigned" && item.scheduledDate < today).length;

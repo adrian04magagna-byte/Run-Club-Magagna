@@ -1,7 +1,8 @@
-import { addDays, inRange, totals, weeklyBuckets, type InsightBucket, type TrainingEntry } from "./insights";
+import { addDays, inRange, startOfWeek, totals, weeklyBuckets, type InsightBucket, type TrainingEntry } from "./insights";
 
 export const MIN_ANALYSIS_RUNS = 8;
-const WINDOW_DAYS = 182;
+const WINDOW_WEEKS = 26;
+const PREDICTION_WEEKS = 12;
 const MIN_PAIRS = 8;
 const MAX_POINTS = 80;
 const MIN_PACE = 150;
@@ -12,13 +13,14 @@ export type Correlation = { key: CorrelationKey; r: number; n: number; points: {
 export type LoadStatus = "low" | "ok" | "high";
 export type RunAnalysis = {
   runs: number;
-  load: { acuteKm: number; chronicWeeklyKm: number; ratio: number | null; status: LoadStatus | null };
+  /** Last finished week against the four before it; the running week is shown but never compared. */
+  load: { thisWeekKm: number; lastWeekKm: number; baselineWeeklyKm: number; ratio: number | null; status: LoadStatus | null };
   trend: { recentPace: number | null; previousPace: number | null; recentKm: number; previousKm: number; recentEfficiency: number | null; previousEfficiency: number | null };
   intensity: { basis: "heartRate" | "pace"; easy: number; moderate: number; hard: number };
   weeks: InsightBucket[];
   weeklyPace: { from: string; pace: number | null }[];
   correlations: Correlation[];
-  predictions: { label: string; meters: number; seconds: number }[];
+  predictions: { label: string; meters: number; seconds: number; trainedForIt: boolean }[];
 };
 
 type Run = TrainingEntry & { pace: number; km: number };
@@ -54,7 +56,11 @@ function correlation(key: CorrelationKey, pairs: { x: number; y: number; date: s
 }
 
 function correlations(runs: Run[], all: Run[]): Correlation[] {
-  const firstDate = all[0]?.date ?? "";
+  const firstMonday = startOfWeek(all[0]?.date ?? "2000-01-03");
+  const previousWeekKm = (run: Run) => {
+    const monday = addDays(startOfWeek(run.date), -7);
+    return monday < firstMonday ? null : sumKm(all.filter((other) => isBetween(other, monday, addDays(monday, 6))));
+  };
   const paired = (read: (run: Run, index: number) => number | null) => runs.flatMap((run, index) => {
     const x = read(run, index);
     return x === null ? [] : [{ x: round(x), y: run.pace, date: run.date }];
@@ -63,7 +69,7 @@ function correlations(runs: Run[], all: Run[]): Correlation[] {
     ...correlation("distance", paired((run) => run.km)),
     ...correlation("climb", paired((run) => (run.elevationMeters ? run.elevationMeters / run.km : null))),
     ...correlation("heartRate", paired((run) => run.averageHeartRate)),
-    ...correlation("recentLoad", paired((run) => (dayGap(firstDate, run.date) < 7 ? null : sumKm(all.filter((other) => isBetween(other, addDays(run.date, -7), addDays(run.date, -1))))))),
+    ...correlation("recentLoad", paired(previousWeekKm)),
     ...correlation("rest", paired((run, index) => (index ? Math.min(7, dayGap(runs[index - 1].date, run.date)) : null))),
   ].sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
 }
@@ -99,15 +105,20 @@ function efficiency(runs: Run[]): number | null {
   return round(meters / beats);
 }
 
+const RACES = [
+  { label: "5 km", meters: 5000 },
+  { label: "10 km", meters: 10_000 },
+  { label: "Meia maratona", meters: 21_097 },
+  { label: "Maratona", meters: 42_195 },
+];
+
 function predictions(runs: Run[], today: string): RunAnalysis["predictions"] {
-  const efforts = runs.filter((run) => run.distanceMeters >= 3000 && run.date >= addDays(today, -90));
+  const from = addDays(startOfWeek(today), -7 * PREDICTION_WEEKS);
+  const efforts = runs.filter((run) => run.distanceMeters >= 3000 && run.date >= from);
   if (!efforts.length) return [];
+  const longest = Math.max(...efforts.map((run) => run.distanceMeters));
   const projected = (meters: number) => Math.min(...efforts.map((run) => run.movingSeconds * (meters / run.distanceMeters) ** 1.06));
-  return [["5 km", 5000], ["10 km", 10_000], ["21 km", 21_097]].map(([label, meters]) => ({
-    label: label as string,
-    meters: meters as number,
-    seconds: Math.round(projected(meters as number)),
-  }));
+  return RACES.map(({ label, meters }) => ({ label, meters, seconds: Math.round(projected(meters)), trainedForIt: longest * 2 >= meters }));
 }
 
 /** Everything is computed here, from the runs alone, so the screen works without any AI. */
@@ -117,21 +128,24 @@ export function analyzeRuns(entries: TrainingEntry[], today: string): RunAnalysi
     .map((entry) => ({ ...entry, km: entry.distanceMeters / 1000, pace: (entry.movingSeconds * 1000) / entry.distanceMeters }))
     .filter((run) => run.pace >= MIN_PACE && run.pace <= MAX_PACE)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const runs = all.filter((run) => run.date >= addDays(today, -(WINDOW_DAYS - 1)));
+  const monday = startOfWeek(today);
+  const runs = all.filter((run) => run.date >= addDays(monday, -7 * WINDOW_WEEKS));
   if (runs.length < MIN_ANALYSIS_RUNS) return null;
 
-  const acuteKm = sumKm(all.filter((run) => isBetween(run, addDays(today, -6), today)));
-  const chronicWeeklyKm = sumKm(all.filter((run) => isBetween(run, addDays(today, -27), today))) / 4;
-  const ratio = chronicWeeklyKm ? round(acuteKm / chronicWeeklyKm) : null;
-  const recent = runs.filter((run) => isBetween(run, addDays(today, -27), today));
-  const previous = runs.filter((run) => isBetween(run, addDays(today, -55), addDays(today, -28)));
+  const thisWeekKm = sumKm(all.filter((run) => isBetween(run, monday, today)));
+  const lastWeekKm = sumKm(all.filter((run) => isBetween(run, addDays(monday, -7), addDays(monday, -1))));
+  const baselineWeeklyKm = sumKm(all.filter((run) => isBetween(run, addDays(monday, -35), addDays(monday, -8)))) / 4;
+  const ratio = baselineWeeklyKm ? round(lastWeekKm / baselineWeeklyKm) : null;
+  const recent = runs.filter((run) => isBetween(run, addDays(monday, -28), addDays(monday, -1)));
+  const previous = runs.filter((run) => isBetween(run, addDays(monday, -56), addDays(monday, -29)));
   const weeks = weeklyBuckets(runs, today, 12);
 
   return {
     runs: runs.length,
     load: {
-      acuteKm: round(acuteKm, 1),
-      chronicWeeklyKm: round(chronicWeeklyKm, 1),
+      thisWeekKm: round(thisWeekKm, 1),
+      lastWeekKm: round(lastWeekKm, 1),
+      baselineWeeklyKm: round(baselineWeeklyKm, 1),
       ratio,
       status: ratio === null ? null : ratio < 0.8 ? "low" : ratio <= 1.3 ? "ok" : "high",
     },
@@ -178,11 +192,11 @@ export function diagnosticFacts(analysis: RunAnalysis) {
   return JSON.stringify({
     corridas_6_meses: runs,
     km_por_semana_12_semanas: weeks.map((week) => round(week.distanceMeters / 1000, 1)),
-    carga: { km_7_dias: load.acuteKm, media_semanal_28_dias: load.chronicWeeklyKm, razao: load.ratio },
-    ritmo_seg_por_km: { ultimos_28_dias: trend.recentPace, anteriores_28_dias: trend.previousPace },
-    metros_por_batimento: { ultimos_28_dias: trend.recentEfficiency, anteriores_28_dias: trend.previousEfficiency },
+    carga: { km_semana_atual_ate_hoje: load.thisWeekKm, km_semana_passada: load.lastWeekKm, media_semanal_4_semanas_anteriores: load.baselineWeeklyKm, razao: load.ratio },
+    ritmo_seg_por_km: { ultimas_4_semanas: trend.recentPace, anteriores_4_semanas: trend.previousPace },
+    metros_por_batimento: { ultimas_4_semanas: trend.recentEfficiency, anteriores_4_semanas: trend.previousEfficiency },
     tempo_por_intensidade: { base_do_calculo: zones.basis === "heartRate" ? "frequência cardíaca" : "ritmo", leve: zones.easy, moderado: zones.moderate, forte: zones.hard },
     correlacoes_com_o_ritmo: found.map(({ key, r, n }) => ({ fator: key, r, corridas: n })),
-    tempos_estimados_seg: times.map(({ label, seconds }) => ({ prova: label, segundos: seconds })),
+    tempos_estimados_seg: times.map(({ label, seconds, trainedForIt }) => ({ prova: label, segundos: seconds, treinos_longos_suficientes: trainedForIt })),
   });
 }

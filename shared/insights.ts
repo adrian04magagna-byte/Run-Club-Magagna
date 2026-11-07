@@ -1,10 +1,11 @@
 // Pure dashboard math shared by the API (and its tests). Dates are local "YYYY-MM-DD" strings so
 // days are bucketed in the runner's own timezone, never the server's.
 
-export const INSIGHT_PERIODS = ["7d", "30d", "90d", "all"] as const;
+export const INSIGHT_PERIODS = ["week", "4w", "12w", "all"] as const;
 export type InsightPeriod = (typeof INSIGHT_PERIODS)[number];
 
-export const PERIOD_DAYS: Record<Exclude<InsightPeriod, "all">, number> = { "7d": 7, "30d": 30, "90d": 90 };
+/** Periods are whole calendar weeks, Monday to Sunday, counting the current one. */
+export const PERIOD_WEEKS: Record<Exclude<InsightPeriod, "all">, number> = { week: 1, "4w": 4, "12w": 12 };
 
 export type TrainingEntry = {
   id: string;
@@ -45,6 +46,16 @@ export function startOfWeek(date: string): string {
   return addDays(date, -((weekday + 6) % 7));
 }
 
+/** Days from `from` to `to`, counting both. */
+export function daysInRange(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+}
+
+/** How many Monday-to-Sunday weeks the range touches. */
+export function calendarWeeks(from: string, to: string): number {
+  return Math.round((daysInRange(startOfWeek(from), startOfWeek(to)) - 1) / 7) + 1;
+}
+
 export function paceSecondsPerKm(distanceMeters: number, movingSeconds: number): number | null {
   return distanceMeters >= 100 && movingSeconds > 0 ? Math.round((movingSeconds * 1000) / distanceMeters) : null;
 }
@@ -81,14 +92,6 @@ function bucket(entries: TrainingEntry[], label: string, from: string, to: strin
 const WEEKDAYS = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
 const MONTHS = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 
-export function dailyBuckets(entries: TrainingEntry[], today: string, days: number): InsightBucket[] {
-  return Array.from({ length: days }, (_, index) => {
-    const day = addDays(today, index - (days - 1));
-    const weekday = new Date(`${day}T12:00:00.000Z`).getUTCDay();
-    return bucket(entries, days <= 7 ? WEEKDAYS[weekday] : day.slice(8, 10), day, day);
-  });
-}
-
 /** Monday-to-Sunday days of the week that starts on `monday`; days still ahead stay empty. */
 export function weekDays(entries: TrainingEntry[], monday: string): InsightBucket[] {
   return Array.from({ length: 7 }, (_, index) => {
@@ -120,9 +123,8 @@ export function monthlyBuckets(entries: TrainingEntry[], today: string, months: 
 
 /** Chart buckets sized so each period reads well: days for short spans, weeks or months for long ones. */
 export function periodSeries(entries: TrainingEntry[], period: InsightPeriod, today: string): InsightBucket[] {
-  if (period === "7d") return dailyBuckets(entries, today, 7);
-  if (period === "30d") return dailyBuckets(entries, today, 30);
-  if (period === "90d") return weeklyBuckets(entries, today, 13);
+  if (period === "week") return weekDays(entries, startOfWeek(today));
+  if (period !== "all") return weeklyBuckets(entries, today, PERIOD_WEEKS[period]);
   const first = entries.reduce<string | null>((min, entry) => (min === null || entry.date < min ? entry.date : min), null);
   if (!first) return monthlyBuckets(entries, today, 6);
   const [fy, fm] = first.split("-").map(Number);

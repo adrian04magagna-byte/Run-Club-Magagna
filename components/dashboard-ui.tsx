@@ -36,7 +36,22 @@ export function delta(current: number, previous: number | null | undefined) {
   return Math.round(((current - previous) / previous) * 100);
 }
 
-const PERIOD_LABELS: Record<InsightPeriod, string> = { "7d": "7 dias", "30d": "30 dias", "90d": "90 dias", all: "Tudo" };
+const PERIOD_LABELS: Record<InsightPeriod, string> = { week: "Semana", "4w": "4 semanas", "12w": "12 semanas", all: "Tudo" };
+
+/** A plain-language line, with the longer explanation one tap away. */
+export function Explain({ lead, more }: { lead?: string; more: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.explain}>
+      {lead ? <Text style={styles.explainText}>{lead}</Text> : null}
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} hitSlop={8} onPress={() => setOpen(!open)} style={styles.explainToggle}>
+        <Ionicons name={open ? "chevron-up" : "help-circle-outline"} size={15} color={C.inkSoft} />
+        <Text style={styles.explainToggleText}>{open ? "Fechar" : "O que é isso?"}</Text>
+      </Pressable>
+      {open ? <Text style={styles.explainText}>{more}</Text> : null}
+    </View>
+  );
+}
 
 export function PeriodSelector({ value, onChange }: { value: InsightPeriod; onChange: (period: InsightPeriod) => void }) {
   return (
@@ -280,6 +295,10 @@ export function Skeleton({ height = 120, radius = 22 }: { height?: number; radiu
 const floatingShadow = "0px 10px 24px rgba(11, 23, 32, 0.08), 0px 2px 6px rgba(11, 23, 32, 0.05)";
 
 const styles = StyleSheet.create({
+  explain: { gap: 6 },
+  explainText: { color: C.inkSoft, fontSize: 12, lineHeight: 18, fontWeight: "600" },
+  explainToggle: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 4 },
+  explainToggleText: { color: C.inkSoft, fontSize: 12, fontWeight: "800", textDecorationLine: "underline" },
   pressed: { opacity: 0.75, transform: [{ scale: 0.98 }] },
   textOnDark: { color: C.white },
   mutedOnDark: { color: "rgba(255,255,255,0.55)" },

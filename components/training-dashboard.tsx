@@ -22,10 +22,10 @@ import { localToday, useInsights } from "@/hooks/use-insights";
 import { useIsDesktop } from "@/hooks/use-layout";
 import { paceSecondsPerKm } from "@/shared/insights";
 
-const PERIOD_NAMES = { "7d": "nos últimos 7 dias", "30d": "nos últimos 30 dias", "90d": "nos últimos 90 dias", all: "em todo o histórico" } as const;
+const PERIOD_NAMES = { week: "nesta semana", "4w": "nas últimas 4 semanas", "12w": "nas últimas 12 semanas", all: "em todo o histórico" } as const;
 
 /**
- * The member's own running dashboard: period stats floating at the top, then the last seven days
+ * The member's own running dashboard: period stats floating at the top, then the current week
  * in focus, then the runs of the week. Data comes from club logs plus the connected Strava account.
  * On phones `aside` (the screen's own cards) and the week focus come first, then the rest stacks; on desktop the week
  * focus and its runs take the left column, while `aside` and the period numbers take the right.
@@ -89,9 +89,9 @@ export function TrainingDashboard({ enabled = true, showRecent = true, aside, ti
           { icon: "calendar-outline", label: "dias ativos", value: String(period.activeDays), accent: C.lime },
         ]}
       />
-      {insights.period !== "7d" ? (
+      {insights.period !== "week" ? (
         <View style={styles.periodChart}>
-          <Text style={styles.periodChartTitle}>Volume {insights.period === "90d" ? "por semana" : insights.period === "all" ? "por mês" : "por dia"}</Text>
+          <Text style={styles.periodChartTitle}>Km {insights.period === "all" ? "por mês" : "por semana (seg a dom)"}</Text>
           <BarChart buckets={data.series} height={72} />
         </View>
       ) : null}

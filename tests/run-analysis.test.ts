@@ -22,8 +22,8 @@ describe("run analysis", () => {
 
   it("finds that longer runs are slower and flags a sudden jump in load", () => {
     const entries = [
-      ...Array.from({ length: 16 }, (_, index) => run(8 + index * 3, 4 + index, 300 + index * 5, 140 + index)),
-      run(1, 30, 390, 160), run(2, 30, 390, 160),
+      ...Array.from({ length: 16 }, (_, index) => run(13 + index * 3, 4 + index, 300 + index * 5, 140 + index)),
+      run(6, 30, 390, 160), run(7, 30, 390, 160),
     ];
     const analysis = analyzeRuns(entries, today)!;
     const distance = analysis.correlations.find((item) => item.key === "distance")!;
@@ -32,7 +32,24 @@ describe("run analysis", () => {
     expect(analysis.load.status).toBe("high");
     expect(analysis.intensity.basis).toBe("heartRate");
     expect(analysis.intensity.easy + analysis.intensity.moderate + analysis.intensity.hard).toBeCloseTo(1, 1);
-    expect(analysis.predictions.map((item) => item.label)).toEqual(["5 km", "10 km", "21 km"]);
+    expect(analysis.predictions.map((item) => item.label)).toEqual(["5 km", "10 km", "Meia maratona", "Maratona"]);
+  });
+
+  it("compares the last finished Monday-to-Sunday week, not the running one", () => {
+    // Today is Saturday: Monday was 5 days ago and last week ran from 12 to 6 days ago.
+    const steady = Array.from({ length: 10 }, (_, index) => run(13 + index * 3, 10, 330));
+    const { load } = analyzeRuns([...steady, run(3, 50, 330), run(8, 10, 330)], today)!;
+    expect(load).toMatchObject({ thisWeekKm: 50, lastWeekKm: 10 });
+    expect(load.baselineWeeklyKm).toBeCloseTo(25, 0);
+    expect(load.status).toBe("low");
+  });
+
+  it("marks the race distances the recent training does not support", () => {
+    const { predictions } = analyzeRuns(Array.from({ length: 10 }, (_, index) => run(index * 3, 8, 330)), today)!;
+    expect(predictions.map((item) => item.trainedForIt)).toEqual([true, true, false, false]);
+    const marathon = predictions.at(-1)!;
+    expect(marathon.meters).toBe(42_195);
+    expect(marathon.seconds).toBeGreaterThan(predictions[2].seconds * 2);
   });
 
   it("falls back to pace when there is no heart rate", () => {

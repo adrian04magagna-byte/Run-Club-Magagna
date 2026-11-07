@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { currentStreak, dailyBuckets, periodSeries, startOfWeek, totals, weekDays, weeklyBuckets, type TrainingEntry } from "../shared/insights";
+import { calendarWeeks, currentStreak, periodSeries, startOfWeek, totals, weekDays, weeklyBuckets, type TrainingEntry } from "../shared/insights";
 
 const run = (date: string, km: number, minutes: number): TrainingEntry => ({
   id: `${date}-${km}`, source: "strava", title: "Corrida", date, startLocal: null,
@@ -19,11 +19,13 @@ describe("dashboard math", () => {
     expect(result.bestPaceSecondsPerKm).toBe(330);
   });
 
-  it("buckets the last seven days with weekday labels", () => {
-    const days = dailyBuckets(entries, "2026-11-04", 7);
+  it("shows the current week from Monday to Sunday and counts calendar weeks", () => {
+    const days = periodSeries(entries, "week", "2026-11-04");
     expect(days).toHaveLength(7);
-    expect(days[6]).toMatchObject({ label: "QUA", from: "2026-11-04", distanceMeters: 5000 });
-    expect(days[5].distanceMeters).toBe(10000);
+    expect(days[0]).toMatchObject({ label: "SEG", from: "2026-11-02" });
+    expect(days[2]).toMatchObject({ label: "QUA", distanceMeters: 5000 });
+    expect(calendarWeeks("2026-11-02", "2026-11-08")).toBe(1);
+    expect(calendarWeeks("2026-11-01", "2026-11-02")).toBe(2);
   });
 
   it("starts the week on Monday and ends it on Sunday, like Strava", () => {
@@ -38,14 +40,15 @@ describe("dashboard math", () => {
     expect(days[6]).toMatchObject({ from: "2026-11-08", distanceMeters: 0 });
   });
 
-  it("groups 90 days into Monday-to-Sunday weeks", () => {
+  it("groups days into Monday-to-Sunday weeks", () => {
     const weeks = weeklyBuckets(entries, "2026-11-04", 3);
     expect(weeks.at(-1)).toMatchObject({ from: "2026-11-02", to: "2026-11-04", distanceMeters: 15000 });
     expect(weeks.at(-2)).toMatchObject({ from: "2026-10-26", to: "2026-11-01", distanceMeters: 300 });
   });
 
-  it("uses weeks for 90 days and months for the whole history", () => {
-    expect(periodSeries(entries, "90d", "2026-11-04")).toHaveLength(13);
+  it("uses weeks for 12 weeks and months for the whole history", () => {
+    expect(periodSeries(entries, "12w", "2026-11-04")).toHaveLength(12);
+    expect(periodSeries(entries, "4w", "2026-11-04").at(0)).toMatchObject({ from: "2026-10-12" });
     const months = periodSeries(entries, "all", "2026-11-04");
     expect(months.at(-1)).toMatchObject({ label: "NOV", distanceMeters: 15300 });
     expect(months.at(-2)).toMatchObject({ label: "OUT", distanceMeters: 8000 });
