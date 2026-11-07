@@ -2,6 +2,7 @@ import {
   boolean,
   customType,
   date,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -184,7 +185,7 @@ export const stravaConnections = pgTable(
   },
   (table) => [
     uniqueIndex("strava_connections_user_unique").on(table.userId),
-    uniqueIndex("strava_connections_athlete_hash_unique").on(table.stravaAthleteHash),
+    index("strava_connections_athlete_hash_idx").on(table.stravaAthleteHash),
   ],
 );
 
